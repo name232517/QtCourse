@@ -1,0 +1,26 @@
+# Qt Creator
+.qtcreator/
+*.user
+*.user.*
+
+# Qt generated
+ui_*.h
+
+# Build
+build/
+build-*/
+cmake-build-*/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# Compiled files
+*.o
+*.obj
+*.exe
+*.dll
+
+debug/
+release/
