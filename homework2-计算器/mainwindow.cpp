@@ -4,6 +4,21 @@
 #include <QPushButton>
 #include <cmath>
 
+namespace {
+// 输入长度上限：超过 16 位有效数字后 double 已无法精确表示，直接忽略多余按键
+constexpr int MaxInputDigits = 16;
+
+int digitCount(const QString &text)
+{
+    int count = 0;
+    for (const QChar &c : text) {
+        if (c >= '0' && c <= '9')
+            ++count;
+    }
+    return count;
+}
+}   // namespace
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -157,7 +172,7 @@ QString MainWindow::calculation(bool *ok)
 
     if (ok)
         *ok = true;
-    return formatNumber(result);
+    return storeNumber(result);             // 中间结果保留完整精度，显示时再格式化
 }
 
 // 数字和小数点的统一入口（按钮与键盘都能复用）
@@ -182,11 +197,14 @@ void MainWindow::appendDigit(const QString &text)
         operand = text;                     // 开始新操作数，同时去掉前导零
     }
     else {
+        if (digitCount(operand) >= MaxInputDigits)
+            return;                         // 超过 16 位：忽略（再长 double 也存不下）
         operand += text;
     }
 
     operandEntered = true;
     hasResult = false;
+    typingDigits = true;
     refreshDisplay();
 }
 
@@ -235,9 +253,10 @@ void MainWindow::applyUnary(const QString &opcode)
         }
     }
 
-    operand = formatNumber(result);
+    operand = storeNumber(result);
     operandEntered = true;      // 算出来的值可以直接参加后续运算
     hasResult = true;           // 之后再按数字键则开始输入新的操作数
+    typingDigits = false;       // 结果由计算得到，显示时统一格式化
     refreshDisplay();
 }
 
@@ -281,6 +300,7 @@ void MainWindow::applyBinaryOperator(const QString &opcode)
     opcodes.push_back(opcode);
     if (!operands.isEmpty())
         operand = operands.back();
+    typingDigits = false;
     refreshDisplay();
 }
 
@@ -300,6 +320,7 @@ void MainWindow::on_btnDel_clicked()
         operand = "0";                  // 结果是算出来的，不能退格：归零
         operandEntered = false;
         hasResult = false;
+        typingDigits = false;
     }
     else {
         operand.chop(1);
@@ -307,6 +328,7 @@ void MainWindow::on_btnDel_clicked()
             operand = "0";              // 退到空：下一个数字重新开始
             operandEntered = false;
         }
+        typingDigits = operandEntered;  // 还在逐位编辑就保留原样显示
     }
     refreshDisplay();
 }
@@ -318,6 +340,7 @@ void MainWindow::on_btnClear_clicked()          // C：只清当前输入的操�
     operand = "0";
     operandEntered = false;
     hasResult = false;
+    typingDigits = false;
     refreshDisplay();
 }
 
@@ -336,6 +359,10 @@ void MainWindow::on_btnEqual_clicked()
         operandEntered = false;
     }
 
+    // 末尾悬挂的运算符（如 1 + 2 × =）没有第二个操作数，直接丢掉
+    if (opcodes.size() >= operands.size() && !opcodes.isEmpty())
+        opcodes.pop_back();
+
     while (operands.size() >= 2 && !opcodes.isEmpty()) {    // 依次结算所有挂起的运算
         bool ok = false;
         const QString result = calculation(&ok);
@@ -350,6 +377,7 @@ void MainWindow::on_btnEqual_clicked()
         operands.clear();
     }
     hasResult = true;                   // 结果可以接着参与运算，也可以直接开始新计算
+    typingDigits = false;
     refreshDisplay();
 }
 
@@ -359,6 +387,7 @@ void MainWindow::resetAll()
     operandEntered = false;
     hasResult = false;
     errorState = false;
+    typingDigits = false;
     operands.clear();
     opcodes.clear();
     ui->display->setText(operand);
@@ -375,7 +404,8 @@ void MainWindow::showError(const QString &message)
 
 void MainWindow::refreshDisplay()
 {
-    ui->display->setText(operand);
+    // 逐位输入时原样显示（保留 "0." 这样的中间状态），计算结果统一格式化
+    ui->display->setText(typingDigits ? operand : formatNumber(operand.toDouble()));
 }
 
 int MainWindow::priority(const QString &opcode)
@@ -387,12 +417,21 @@ int MainWindow::priority(const QString &opcode)
     return 0;
 }
 
+// 显示用：12 位有效数字，避免 0.1+0.2 显示成一长串
 QString MainWindow::formatNumber(double value)
 {
     if (std::isinf(value) || std::isnan(value))
         return QStringLiteral("错误");
-    QString text = QString::number(value, 'g', 12);     // 避免 0.1+0.2 显示成一长串
+    QString text = QString::number(value, 'g', 12);
     if (text == "-0")
         text = "0";
     return text;
+}
+
+// 运算用：17 位有效数字（double 的往返精度），保证连续运算不被中间结果截断
+QString MainWindow::storeNumber(double value)
+{
+    if (std::isinf(value) || std::isnan(value))
+        return QStringLiteral("0");
+    return QString::number(value, 'g', 17);
 }

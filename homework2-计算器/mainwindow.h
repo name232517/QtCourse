@@ -21,12 +21,13 @@ public:
     ~MainWindow() override;
 
     // 计算器状态：正在输入的数 operand + 操作数栈 operands + 运算符栈 opcodes
-    QString operand;                        // 当前正在输入（或显示）的数字串
+    QString operand;                        // 当前输入/显示的数值串（计算结果按 17 位有效数字保存）
     QStack<QString> operands;               // 操作数栈
     QStack<QString> opcodes;                // 运算符栈
     bool operandEntered = false;            // operand 是否是等待参与运算的操作数
     bool hasResult = false;                 // 刚刚得到计算结果（用于"结果后继续输入"）
     bool errorState = false;                // 处于错误提示状态（如除数为 0）
+    bool typingDigits = false;              // 正在逐位输入（原样显示，保留 "0." 这类中间状态）
 
     QString calculation(bool *ok = nullptr);        // 结算栈顶的一次二元运算
 
@@ -50,9 +51,10 @@ private:
     void applyUnary(const QString &opcode);         // 单目运算统一入口
     void resetAll();                                // 回到初始状态（CE）
     void showError(const QString &message);         // 进入错误状态并提示
-    void refreshDisplay();                          // 把 operand 显示到屏幕
+    void refreshDisplay();                          // 把当前值显示到屏幕
     static int priority(const QString &opcode);     // 运算符优先级
-    static QString formatNumber(double value);      // 计算结果的显示格式
+    static QString formatNumber(double value);      // 用于显示的格式（12 位有效数字）
+    static QString storeNumber(double value);       // 用于继续运算的格式（17 位有效数字）
 
     Ui::MainWindow *ui;
     QLabel *statusMsgLabel;
