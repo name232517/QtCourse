@@ -10,6 +10,10 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    // 显示区不接收焦点：键盘输入统一交给 keyPressEvent，避免被 QLineEdit 吃掉
+    ui->display->setReadOnly(true);
+    ui->display->setFocusPolicy(Qt::NoFocus);
+
     // 数字 0~9：按控件名统一连接，避免十行重复代码
     for (int i = 0; i <= 9; ++i) {
         connect(findChild<QPushButton *>(QString("btnNum%1").arg(i)), SIGNAL(clicked()),
@@ -36,6 +40,86 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+// 键盘输入：所有按键都转发到与鼠标相同的处理函数，保证两种输入方式行为一致
+void MainWindow::keyPressEvent(QKeyEvent *event)
+{
+    const QString text = event->text();
+
+    // 1. 数字键（主键盘与小键盘都有效）
+    if (text.size() == 1 && text.at(0) >= '0' && text.at(0) <= '9') {
+        appendDigit(text);
+        return;
+    }
+
+    // 2. 字符键
+    if (text == "." || text == ",") {
+        appendDigit(".");
+        return;
+    }
+    if (text == "+") {
+        applyBinaryOperator("+");
+        return;
+    }
+    if (text == "-") {
+        applyBinaryOperator("-");
+        return;
+    }
+    if (text == "*" || text == "x" || text == "X" || text == "×") {
+        applyBinaryOperator("×");
+        return;
+    }
+    if (text == "/" || text == "÷") {
+        applyBinaryOperator("/");
+        return;
+    }
+    if (text == "%") {
+        applyUnary("%");
+        return;
+    }
+    if (text == "=") {
+        on_btnEqual_clicked();
+        return;
+    }
+
+    // 3. 功能键与单目运算快捷键（与 Windows 计算器保持一致）
+    switch (event->key()) {
+    case Qt::Key_Return:            // 主键盘回车
+    case Qt::Key_Enter:             // 小键盘回车
+    case Qt::Key_Equal:
+        on_btnEqual_clicked();
+        return;
+    case Qt::Key_Period:
+    case Qt::Key_Comma:
+        appendDigit(".");
+        return;
+    case Qt::Key_Backspace:         // 退格
+        on_btnDel_clicked();
+        return;
+    case Qt::Key_Delete:            // Delete 等于 C：只清当前输入的操作数
+        on_btnClear_clicked();
+        return;
+    case Qt::Key_Escape:            // Esc 等于 CE：清空整个计算
+        on_btnClearAll_clicked();
+        return;
+    case Qt::Key_At:                // @ ：开平方 √
+        applyUnary("√");
+        return;
+    case Qt::Key_Q:                 // q ：平方 x^2
+        applyUnary("x^2");
+        return;
+    case Qt::Key_R:                 // r ：倒数 1/x
+        applyUnary("1/x");
+        return;
+    case Qt::Key_F9:                // F9：正负号 ±
+        applyUnary("±");
+        return;
+    default:
+        break;
+    }
+
+    QMainWindow::keyPressEvent(event);      // 其它按键交回父类处理
 }
 
 // 结算栈顶的一次二元运算：取出最上面的两个操作数和一个运算符
@@ -162,10 +246,14 @@ void MainWindow::btnUnaryOperatorClicked()
     applyUnary(qobject_cast<QPushButton *>(sender())->text());
 }
 
-// 二元运算符：向栈中压入操作数，并保证 × ÷ 优先于 + -
 void MainWindow::btnBinaryOperatorClicked()
 {
-    const QString opcode = qobject_cast<QPushButton *>(sender())->text();
+    applyBinaryOperator(qobject_cast<QPushButton *>(sender())->text());
+}
+
+// 二元运算符：向栈中压入操作数，并保证 × ÷ 优先于 + -
+void MainWindow::applyBinaryOperator(const QString &opcode)
+{
     if (errorState)
         resetAll();
 

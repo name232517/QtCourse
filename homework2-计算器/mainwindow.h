@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QKeyEvent>
 #include <Qlabel>
 #include <QStack>
 
@@ -29,6 +30,9 @@ public:
 
     QString calculation(bool *ok = nullptr);        // 结算栈顶的一次二元运算
 
+protected:
+    void keyPressEvent(QKeyEvent *event) override;  // 键盘输入（与鼠标复用同一套处理函数）
+
 private slots:
     void btnNumClicked();                   // 数字 0~9
     void btnBinaryOperatorClicked();        // + - × /
@@ -42,6 +46,7 @@ private slots:
 
 private:
     void appendDigit(const QString &text);          // 数字/小数点统一入口
+    void applyBinaryOperator(const QString &opcode); // 二元运算统一入口
     void applyUnary(const QString &opcode);         // 单目运算统一入口
     void resetAll();                                // 回到初始状态（CE）
     void showError(const QString &message);         // 进入错误状态并提示
