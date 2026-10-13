@@ -251,8 +251,17 @@ void MainWindow::appendDigit(const QString &text)
     const bool freshStart = hasResult || !operandEntered;   // 结果后/运算符后/C 之后
 
     if (text == ".") {
-        if (freshStart) {
-            operand = "0.";
+        if (hasResult) {
+            // 结果显示中没有小数点时，接着按小数点可以在整数结果后继续输入小数（5 → 5.5）
+            if (!operand.contains(".") && !operand.contains("e", Qt::CaseInsensitive)) {
+                operand += ".";
+            }
+            else {
+                return;                     // 结果本身已带小数点（或科学计数法）：忽略
+            }
+        }
+        else if (!operandEntered) {
+            operand = "0.";                 // 运算符后 / C 后：开始输入下一个操作数
         }
         else if (!operand.contains(".")) {
             operand += ".";                 // 同一个操作数内只允许一个小数点
