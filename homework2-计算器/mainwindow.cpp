@@ -25,6 +25,8 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    applyStyleSheet();      // 界面美化：样式表
+
     // 显示区不接收焦点：键盘输入统一交给 keyPressEvent，避免被 QLineEdit 吃掉
     ui->display->setReadOnly(true);
     ui->display->setFocusPolicy(Qt::NoFocus);
@@ -55,6 +57,72 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+// 界面美化：用样式表按"数字键 / 功能键 / 运算符"三组统一配色、圆角与字号
+void MainWindow::applyStyleSheet()
+{
+    setStyleSheet(R"QSS(
+        QMainWindow, QWidget#centralwidget {
+            background-color: #1f2226;
+            font-family: "Microsoft YaHei UI", "Segoe UI";
+        }
+
+        /* 显示区：深色底 + 浅色大字（右对齐在 .ui 中设置） */
+        QLineEdit#display {
+            background-color: #12141a;
+            color: #f5f7fa;
+            border: 1px solid #343b47;
+            border-radius: 10px;
+            padding: 8px 14px;
+            font-size: 28px;
+        }
+
+        /* 数字键 */
+        QPushButton {
+            background-color: #333a45;
+            color: #f5f7fa;
+            border: none;
+            border-radius: 10px;
+            font-size: 20px;
+            padding: 10px 0;
+            min-height: 42px;
+            min-width: 60px;
+        }
+        QPushButton:hover   { background-color: #3f4754; }
+        QPushButton:pressed { background-color: #2a303a; }
+
+        /* 功能键：CE C ⌫ % 1/x x^2 √ ± */
+        QPushButton#btnClearAll, QPushButton#btnClear, QPushButton#btnDel,
+        QPushButton#btnPercentage, QPushButton#btnInverse, QPushButton#btnSquare,
+        QPushButton#btnSqrt, QPushButton#btnPlus {
+            background-color: #4a5361;
+        }
+        QPushButton#btnClearAll:hover, QPushButton#btnClear:hover, QPushButton#btnDel:hover,
+        QPushButton#btnPercentage:hover, QPushButton#btnInverse:hover, QPushButton#btnSquare:hover,
+        QPushButton#btnSqrt:hover, QPushButton#btnPlus:hover {
+            background-color: #586274;
+        }
+
+        /* 运算符：+ - × / = */
+        QPushButton#btnAdd, QPushButton#btnMinus, QPushButton#btnMultiply,
+        QPushButton#btnDivide, QPushButton#btnEqual {
+            background-color: #f59e0b;
+            color: #1f2226;
+            font-weight: bold;
+        }
+        QPushButton#btnAdd:hover, QPushButton#btnMinus:hover, QPushButton#btnMultiply:hover,
+        QPushButton#btnDivide:hover, QPushButton#btnEqual:hover {
+            background-color: #fbb43a;
+        }
+
+        /* 状态栏：与窗口同色，仅在有提示信息时显示文字 */
+        QStatusBar {
+            background-color: #1f2226;
+            color: #c9a227;
+            border: none;
+        }
+    )QSS");
 }
 
 // 键盘输入：所有按键都转发到与鼠标相同的处理函数，保证两种输入方式行为一致
@@ -232,7 +300,7 @@ void MainWindow::applyUnary(const QString &opcode)
         }
         result = std::sqrt(value);
     }
-    else if (opcode == "x^2") {
+    else if (opcode == "x²" || opcode == "x^2") {
         result = value * value;
     }
     else if (opcode == "1/x") {

@@ -3,7 +3,6 @@
 
 #include <QMainWindow>
 #include <QKeyEvent>
-#include <Qlabel>
 #include <QStack>
 
 QT_BEGIN_NAMESPACE
@@ -46,6 +45,7 @@ private slots:
     void on_btnEqual_clicked();             // =
 
 private:
+    void applyStyleSheet();                         // 界面美化：样式表
     void appendDigit(const QString &text);          // 数字/小数点统一入口
     void applyBinaryOperator(const QString &opcode); // 二元运算统一入口
     void applyUnary(const QString &opcode);         // 单目运算统一入口
@@ -57,7 +57,6 @@ private:
     static QString storeNumber(double value);       // 用于继续运算的格式（17 位有效数字）
 
     Ui::MainWindow *ui;
-    QLabel *statusMsgLabel;
 };
 
 #endif // MAINWINDOW_H
