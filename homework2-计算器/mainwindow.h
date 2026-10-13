@@ -55,6 +55,7 @@ private:
     static int priority(const QString &opcode);     // 运算符优先级
     static QString formatNumber(double value);      // 用于显示的格式（12 位有效数字）
     static QString storeNumber(double value);       // 用于继续运算的格式（17 位有效数字）
+    static QString plainNumber(const QString &text); // 科学计数法展开成普通十进制（便于逐位退格）
 
     Ui::MainWindow *ui;
 };

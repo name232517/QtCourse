@@ -393,20 +393,27 @@ void MainWindow::on_btnDel_clicked()
         return;
     }
 
-    if (hasResult || !operandEntered) {
-        operand = "0";                  // 结果是算出来的，不能退格：归零
-        operandEntered = false;
+    if (hasResult) {
+        // 计算结果也能逐位退格：先按显示格式取该结果，科学计数法再展开成普通写法
+        // （1e-12 → 0.000000000001），然后当作输入中的数字一位一位删
+        operand = plainNumber(formatNumber(operand.toDouble()));
         hasResult = false;
+        operandEntered = true;
+        typingDigits = true;
+    }
+    else if (!operandEntered) {
+        operand = "0";                  // 运算符之后：没有正在输入的数字可删
         typingDigits = false;
+        refreshDisplay();
+        return;
     }
-    else {
-        operand.chop(1);
-        if (operand.isEmpty() || operand == "-") {
-            operand = "0";              // 退到空：下一个数字重新开始
-            operandEntered = false;
-        }
-        typingDigits = operandEntered;  // 还在逐位编辑就保留原样显示
+
+    operand.chop(1);
+    if (operand.isEmpty() || operand == "-") {
+        operand = "0";                  // 退到空：下一个数字重新开始
+        operandEntered = false;
     }
+    typingDigits = operandEntered;      // 还在逐位编辑就保留原样显示
     refreshDisplay();
 }
 
@@ -511,4 +518,20 @@ QString MainWindow::storeNumber(double value)
     if (std::isinf(value) || std::isnan(value))
         return QStringLiteral("0");
     return QString::number(value, 'g', 17);
+}
+
+// 把科学计数法展开成普通十进制写法（1e-12 → 0.000000000001），这样结果也能逐位退格
+QString MainWindow::plainNumber(const QString &text)
+{
+    if (!text.contains('e', Qt::CaseInsensitive))
+        return text;
+    QString plain = QString::number(text.toDouble(), 'f', 15);
+    const int dot = plain.indexOf('.');
+    if (dot >= 0) {
+        while (plain.size() > dot + 1 && plain.endsWith('0'))
+            plain.chop(1);              // 去掉小数末尾多余的 0
+        if (plain.endsWith('.'))
+            plain.chop(1);
+    }
+    return plain;
 }
