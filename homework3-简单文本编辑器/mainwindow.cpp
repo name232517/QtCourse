@@ -6,10 +6,12 @@
 #include "replacedialog.h"
 
 #include <QCloseEvent>
+#include <QClipboard>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QLabel>
 #include <QMessageBox>
 #include <QStandardPaths>
@@ -44,6 +46,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
 
     initStatusBar();
+    initEditActions();
 
     // 编辑区内容一改，标题上的 * 跟着变
     connect(ui->textEdit->document(), &QTextDocument::modificationChanged,
@@ -70,6 +73,45 @@ void MainWindow::initStatusBar()
         label->setMinimumWidth(72);
         statusBar()->addPermanentWidget(label);
     }
+}
+
+// ---------------------------------------------------------------------------
+// 编辑菜单：撤销 / 恢复 / 剪切 / 复制 / 粘贴 / 全选
+// ---------------------------------------------------------------------------
+
+// 把 Action 接到编辑区上同名操作，并让它们的可用状态跟着编辑区实时变化：
+// 没有可撤销的步骤、没有选中文字、剪贴板里没有文本时，对应菜单项和工具栏按钮变灰。
+void MainWindow::initEditActions()
+{
+    connect(ui->actionUndo, &QAction::triggered, ui->textEdit, &QPlainTextEdit::undo);
+    connect(ui->actionRedo, &QAction::triggered, ui->textEdit, &QPlainTextEdit::redo);
+    connect(ui->actionCut, &QAction::triggered, ui->textEdit, &QPlainTextEdit::cut);
+    connect(ui->actionCopy, &QAction::triggered, ui->textEdit, &QPlainTextEdit::copy);
+    connect(ui->actionPaste, &QAction::triggered, ui->textEdit, &QPlainTextEdit::paste);
+    connect(ui->actionSelectAll, &QAction::triggered, ui->textEdit, &QPlainTextEdit::selectAll);
+
+    // 这些信号覆盖了「改内容 / 撤销重做 / 选中变化 / 剪贴板变化」四种情况
+    QTextDocument *doc = ui->textEdit->document();
+    connect(doc, &QTextDocument::undoAvailable, this, &MainWindow::updateEditActions);
+    connect(doc, &QTextDocument::redoAvailable, this, &MainWindow::updateEditActions);
+    connect(ui->textEdit, &QPlainTextEdit::copyAvailable, this, &MainWindow::updateEditActions);
+    connect(ui->textEdit, &QPlainTextEdit::selectionChanged, this, &MainWindow::updateEditActions);
+    connect(QGuiApplication::clipboard(), &QClipboard::dataChanged,
+            this, &MainWindow::updateEditActions);
+
+    updateEditActions();
+}
+
+void MainWindow::updateEditActions()
+{
+    const QTextDocument *doc = ui->textEdit->document();
+    const bool hasSelection = ui->textEdit->textCursor().hasSelection();
+
+    ui->actionUndo->setEnabled(doc->isUndoAvailable());
+    ui->actionRedo->setEnabled(doc->isRedoAvailable());
+    ui->actionCut->setEnabled(hasSelection);    // 没选中东西时剪切/复制无意义
+    ui->actionCopy->setEnabled(hasSelection);
+    ui->actionPaste->setEnabled(ui->textEdit->canPaste());
 }
 
 // 标题格式：*文件名 - 编辑器（有未保存修改时前面加 *）

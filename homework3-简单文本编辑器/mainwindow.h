@@ -39,6 +39,8 @@ private slots:
 
 private:
     void initStatusBar();                           // 把 .ui 里放好的信息标签挂到状态栏右侧
+    void initEditActions();                         // 编辑动作接上编辑区，并让使能状态跟着变
+    void updateEditActions();                       // 按编辑区状态设置撤销/恢复/剪切/复制/粘贴是否可用
     bool maybeSave();                               // 有未保存修改时询问「保存 / 不保存 / 取消」
     bool saveFile();                                // 保存到当前文件；还没有路径时转为另存为
     bool saveFileAs();                              // 选择路径后保存

@@ -37,6 +37,18 @@
 - 读写统一用 UTF-8；打开失败（文件不存在、被占用、无权限）与写入失败都会弹提示说明原因，
   不会清空当前编辑区。
 
+### 第四次提交：撤销 / 恢复 / 剪切 / 复制 / 粘贴 / 全选
+
+- 六个 Action 分别接到编辑区的 `undo / redo / cut / copy / paste / selectAll`，
+  菜单项、工具栏按钮、快捷键（Ctrl+Z、Ctrl+Shift+Z、Ctrl+X、Ctrl+C、Ctrl+V、Ctrl+A）共用同一个 Action；
+- **使能状态与编辑状态联动**（函数 `updateEditActions()`）：
+  - 撤销 / 恢复：跟着文档的 undo/redo 栈是否为空；
+  - 剪切 / 复制：只有选中了文字才可用；
+  - 粘贴：剪贴板里没有可粘贴的文本时变灰；
+  - 全选：始终可用。
+- 联动信号来自 `QTextDocument::undoAvailable / redoAvailable`、`QPlainTextEdit::copyAvailable /
+  selectionChanged` 与 `QClipboard::dataChanged`，改内容、撤销重做、改变选区、复制别处内容都会刷新。
+
 ## 二、目录结构
 
 ```
