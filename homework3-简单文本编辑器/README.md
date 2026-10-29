@@ -2,9 +2,9 @@
 
 东莞理工学院  计算机科学与技术学院  Qt 应用程序开发课程  实验二
 
-## 一、当前进度（第一次提交）
+## 一、当前进度
 
-本次提交完成**主窗口界面设计**：
+### 第一次提交：主窗口界面设计
 
 - 用 Qt Designer 设计 `mainwindow.ui`：菜单栏、工具栏、编辑区、状态栏布局与组件属性；
 - 用 Action 编辑器建立全部 Action，并按「文件 / 编辑 / 格式 / 查看 / 帮助」分组，
@@ -12,7 +12,18 @@
 - 图标统一取自 Material Design Icons 一套图标库，编译进 `res.qrc` 资源；
 - 状态栏右侧信息区标签：`length`、`lines`、`Ln`、`Col`、姓名。
 
-尚未实现：文件读写、编辑动作逻辑、查找/替换/关于对话框、行号、未保存提示等（后续提交完成）。
+### 第二次提交：对话框界面设计
+
+- 查找对话框 `finddialog.ui`：查找目标输入框、「查找下一个」、方向（向上 / 向下）、
+  区分大小写、取消；
+- 替换对话框 `replacedialog.ui`：查找目标、替换为、「查找下一个」「替换」「全部替换」、
+  方向、区分大小写、取消；
+- 关于对话框 `aboutdialog.ui`：软件名称、图标、开发者 / 学号 / 邮箱、版本号、OK；
+- 三个对话框由「编辑 → 查找 / 替换」「帮助 → 关于」打开：查找与替换为非模态窗口
+  （只创建一次，关掉后再点菜单会重新显示），关于为模态窗口。
+
+尚未实现：文件读写、编辑动作逻辑、查找替换的实际算法、行号、未保存提示等（后续提交完成）。
+当前对话框中除「取消 / OK」外的按钮只搭好界面，功能在后续提交中接入。
 
 ## 二、目录结构
 
@@ -22,9 +33,18 @@ QT2/
 ├── main.cpp
 ├── mainwindow.h
 ├── mainwindow.cpp
-├── mainwindow.ui      # 界面：菜单、工具栏、编辑区、状态栏
-├── res.qrc            # 图标资源
-├── images/            # SVG 图标（Material Design Icons）
+├── mainwindow.ui        # 界面：菜单、工具栏、编辑区、状态栏
+├── finddialog.h
+├── finddialog.cpp
+├── finddialog.ui        # 查找对话框
+├── replacedialog.h
+├── replacedialog.cpp
+├── replacedialog.ui     # 替换对话框
+├── aboutdialog.h
+├── aboutdialog.cpp
+├── aboutdialog.ui       # 关于对话框
+├── res.qrc              # 图标资源
+├── images/              # SVG 图标（Material Design Icons）
 └── README.md
 ```
 
