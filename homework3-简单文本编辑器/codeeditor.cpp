@@ -14,6 +14,12 @@ CodeEditor::CodeEditor(QWidget *parent)
             [this](int) { updateLineNumberAreaWidth(); });
     connect(this, &QPlainTextEdit::updateRequest, this, &CodeEditor::updateLineNumberArea);
 
+    // 光标换行时要重画行号栏（把当前行的行号高亮挪过去）
+    connect(this, &QPlainTextEdit::cursorPositionChanged, this, [this] {
+        if (m_visible)
+            m_lineNumberArea->update();
+    });
+
     updateLineNumberAreaWidth();
 }
 
@@ -61,6 +67,19 @@ void CodeEditor::refreshLineNumberArea()
         m_lineNumberArea->update();
 }
 
+// 点行号栏：把那一行整行选中，光标也放到行首，方便直接复制或删除
+void CodeEditor::selectLineAt(int y)
+{
+    if (!m_visible)
+        return;
+
+    QTextCursor cursor = cursorForPosition(QPoint(0, y));
+    cursor.movePosition(QTextCursor::StartOfBlock);
+    cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    setTextCursor(cursor);
+    setFocus();
+}
+
 void CodeEditor::updateLineNumberArea(const QRect &rect, int dy)
 {
     if (!m_visible)
@@ -89,14 +108,25 @@ void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event)
     QPainter painter(m_lineNumberArea);
     painter.fillRect(event->rect(), QColor(0xFD, 0xF6, 0xE3));   // 淡黄底，与参考界面一致
 
+    const int currentLine = textCursor().blockNumber();
+
     QTextBlock block = firstVisibleBlock();
     int blockNumber = block.blockNumber();
     int top = qRound(blockBoundingGeometry(block).translated(contentOffset()).top());
     int bottom = top + qRound(blockBoundingRect(block).height());
 
-    painter.setPen(QColor(0x60, 0x60, 0x60));
     while (block.isValid() && top <= event->rect().bottom()) {
         if (block.isVisible() && bottom >= event->rect().top()) {
+            const bool isCurrent = (blockNumber == currentLine);
+
+            // 当前行：整条行号底色加深一点，数字也加深，方便一眼看到光标在哪一行
+            if (isCurrent) {
+                painter.fillRect(QRect(0, top, m_lineNumberArea->width(),
+                                       qRound(blockBoundingRect(block).height())),
+                                 QColor(0xF6, 0xE2, 0xB4));
+            }
+
+            painter.setPen(isCurrent ? QColor(0x20, 0x20, 0x20) : QColor(0x60, 0x60, 0x60));
             painter.drawText(0, top, m_lineNumberArea->width() - 6, fontMetrics().height(),
                              Qt::AlignRight, QString::number(blockNumber + 1));
         }

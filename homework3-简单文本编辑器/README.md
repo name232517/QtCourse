@@ -135,8 +135,47 @@
 | 重新打开刚保存的文件 | `length: 24 \| lines: 3 \| Ln: 1 \| Col: 1` |
 | 隐藏状态栏期间插入一行 | 内部值 `length: 29 \| lines: 4 \| Ln: 4 \| Col: 5`，重新显示后一致 |
 
-尚未实现：定时自动保存（选做）。
+### 第十次提交：自定义的可显示行号的文本编辑控件类
 
+按实验要求「从 `QPlainTextEdit` 派生一个类，支持行号的显示，通过 promote 操作使用」实现：
+
+- `CodeEditor : public QPlainTextEdit`（`codeeditor.h` / `codeeditor.cpp`），内部再定义一个轻量的
+  `LineNumberArea` 子控件，专职接收事件和画行号，画法由 `CodeEditor::lineNumberAreaPaintEvent()` 决定；
+- **行号栏真正占位，不是浮在文字上的贴纸**：`setViewportMargins(width, 0, 0, 0)` 把 viewport 往右让出一条，
+  再把 `LineNumberArea` 摆进左侧这条边，所以文字永远不会被行号压住，滚动条位置也正确；
+- **宽度自适应**：`12 + 一个数字的宽度 × 最大行号位数`，行数变化（`blockCountChanged`）就重算 ——
+  1~9 行 20px、三位数行号 36px；字体换大后由 `refreshLineNumberArea()` 重算并重绘；
+- **只画可见的块**：从 `firstVisibleBlock()` 起逐块取 `blockBoundingGeometry()` / `blockBoundingRect()`
+  算出上下边界，超出视口的块直接跳过；滚动时用 `updateRequest` 带过来的 `dy` 让行号栏
+  `scroll()` 跟着滚，不整块重画；
+- **当前行高亮**：光标所在那一行的行号底色加深一档（`#F6E2B4`）、数字也加深，
+  光标一移动（`cursorPositionChanged`）就重绘，一眼能看出光标在第几行；
+- **点行号栏选整行**：`selectLineAt(y)` 把该行整行选中并让编辑区拿到焦点，方便整行复制或删除；
+- **可随时关闭**：格式菜单「显示行号」直接调 `setLineNumbersVisible()`，关掉时宽度归零、
+  点击也不再生效，再打开恢复原样。
+
+在 Qt Designer 里使用的方式（promote）：
+
+1. 拖一个 `QPlainTextEdit` 到窗口上，右键 →「提升为…」；
+2. 「提升的类名称」填 `CodeEditor`，「头文件」填 `codeeditor.h`，点「添加」再点「提升」；
+3. `.ui` 里会写成 `<widget class="CodeEditor" name="textEdit">`，并在 `<customwidgets>` 里声明
+   `<extends>QPlainTextEdit</extends>`，uic 生成的头文件会自动 `#include "codeeditor.h"`；
+4. `CMakeLists.txt` 里补 `target_include_directories(QT2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})`，
+   保证 uic 生成的头文件能找到 `codeeditor.h`。
+
+自测结果：
+
+| 检查项 | 实测 |
+| --- | --- |
+| 默认（1 行） | 行号栏宽 20px，左边距 20px |
+| 6 行 | 宽 20px（行号仍是 1 位） |
+| 120 行 | 宽 36px（行号变成 3 位，自动加宽） |
+| 光标在第 3 行 | 行号底色 `#F6E2B4`，其余行 `#FDF6E3` |
+| 点第 4 行行号 | 光标到第 4 行，选中文字「第四行」 |
+| 关闭「显示行号」 | 可见=否、宽度 0px、`selectLineAt()` 不再选中任何内容 |
+| 重新打开 | 恢复 20px 宽、行号照常显示 |
+
+尚未实现：定时自动保存（选做）。
 ## 二、目录结构
 
 ```
