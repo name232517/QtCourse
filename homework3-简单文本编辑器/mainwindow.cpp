@@ -1,4 +1,4 @@
-﻿#include "mainwindow.h"
+#include "mainwindow.h"
 #include "./ui_mainwindow.h"
 
 #include "aboutdialog.h"
@@ -21,6 +21,7 @@
 #include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QStatusBar>
+#include <QTextCursor>
 #include <QTextDocument>
 #include <QTextStream>
 #include <QToolBar>
@@ -319,10 +320,69 @@ bool MainWindow::loadFile(const QString &path)
 // 查找对话框：非模态，可以一边开着一边看编辑区
 void MainWindow::on_actionFind_triggered()
 {
-    if (m_findDialog == nullptr)
+    if (m_findDialog == nullptr) {
         m_findDialog = new FindDialog(this);
+        connect(m_findDialog, &FindDialog::findRequested, this, &MainWindow::findNext);
+    }
+
+    // 编辑区里正好选中了一段文字，就把它填进「查找目标」，省得再敲一遍
+    const QString selected = ui->textEdit->textCursor().selectedText();
+    if (!selected.isEmpty() && !selected.contains(QChar::ParagraphSeparator))
+        m_findDialog->setFindText(selected);
 
     m_findDialog->show();
+    m_findDialog->raise();
+    m_findDialog->activateWindow();
+}
+
+// 在编辑区里查找下一个匹配：
+// 1. 从光标当前位置开始找；
+// 2. 找到就选中它并滚到可见处，光标带着选区，下次再点就从这个匹配后面继续；
+// 3. 找不到就绕回文档另一头再找一次（和记事本、VS Code 的行为一致），
+//    两头都没有才提示「找不到」。
+void MainWindow::findNext(const QString &text, bool caseSensitive, bool backward)
+{
+    if (text.isEmpty()) {
+        QMessageBox::information(this, tr("查找"), tr("请先输入要查找的内容。"));
+        m_findDialog->raise();
+        m_findDialog->activateWindow();
+        return;
+    }
+
+    QTextDocument::FindFlags flags;
+    if (caseSensitive)
+        flags |= QTextDocument::FindCaseSensitively;
+    if (backward)
+        flags |= QTextDocument::FindBackward;
+
+    QTextDocument *doc = ui->textEdit->document();
+
+    // 第一轮：从光标处开始找。光标带着上一次的匹配选区时，
+    // QTextDocument::find 会从选区末尾（向上查找时是选区开头）接着搜，正好是「下一个」。
+    QTextCursor found = doc->find(text, ui->textEdit->textCursor(), flags);
+
+    bool wrapped = false;
+    if (found.isNull()) {
+        // 第二轮：已经到文档尽头了，绕回另一头再找一次
+        QTextCursor from(doc);
+        from.movePosition(backward ? QTextCursor::End : QTextCursor::Start);
+        found = doc->find(text, from, flags);
+        wrapped = !found.isNull();
+    }
+
+    if (found.isNull()) {
+        QMessageBox::information(this, tr("查找"), tr("找不到「%1」。").arg(text));
+        statusBar()->showMessage(tr("未找到：%1").arg(text), 3000);
+    } else {
+        ui->textEdit->setTextCursor(found);
+        ui->textEdit->ensureCursorVisible();
+        statusBar()->showMessage(wrapped
+                                     ? tr("已绕回另一头，找到：%1").arg(text)
+                                     : tr("找到：%1").arg(text),
+                                 3000);
+    }
+
+    // 提示完把焦点还给对话框，方便接着改条件再按「查找下一个」
     m_findDialog->raise();
     m_findDialog->activateWindow();
 }

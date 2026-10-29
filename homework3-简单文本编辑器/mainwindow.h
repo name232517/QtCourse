@@ -51,6 +51,10 @@ private slots:
     void on_actionStatusBar_toggled(bool checked);  // 显示/隐藏状态栏
     void updateStatusInfo();                        // 刷新状态栏的 length / lines / Ln / Col
 
+    // 查找
+    // 查找对话框点「查找下一个」时发来：查找词、是否区分大小写、是否向上
+    void findNext(const QString &text, bool caseSensitive, bool backward);
+
 private:
     void initStatusBar();                           // 把 .ui 里放好的信息标签挂到状态栏右侧
     void initViewActions();                         // 让工具栏/状态栏的勾选状态与实际显示同步
