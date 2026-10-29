@@ -322,7 +322,11 @@ void MainWindow::on_actionFind_triggered()
 {
     if (m_findDialog == nullptr) {
         m_findDialog = new FindDialog(this);
-        connect(m_findDialog, &FindDialog::findRequested, this, &MainWindow::findNext);
+        connect(m_findDialog, &FindDialog::findRequested, this,
+                [this](const QString &text, bool caseSensitive, bool backward) {
+                    findNext(text, caseSensitive, backward);
+                    bringToFront(m_findDialog);
+                });
     }
 
     // 编辑区里正好选中了一段文字，就把它填进「查找目标」，省得再敲一遍
@@ -330,24 +334,55 @@ void MainWindow::on_actionFind_triggered()
     if (!selected.isEmpty() && !selected.contains(QChar::ParagraphSeparator))
         m_findDialog->setFindText(selected);
 
-    m_findDialog->show();
-    m_findDialog->raise();
-    m_findDialog->activateWindow();
+    bringToFront(m_findDialog);
 }
 
-// 在编辑区里查找下一个匹配：
-// 1. 从光标当前位置开始找；
-// 2. 找到就选中它并滚到可见处，光标带着选区，下次再点就从这个匹配后面继续；
-// 3. 找不到就绕回文档另一头再找一次（和记事本、VS Code 的行为一致），
-//    两头都没有才提示「找不到」。
-void MainWindow::findNext(const QString &text, bool caseSensitive, bool backward)
+// 替换对话框：非模态，同样可以一边开着一边看编辑区
+void MainWindow::on_actionReplace_triggered()
 {
-    if (text.isEmpty()) {
-        QMessageBox::information(this, tr("查找"), tr("请先输入要查找的内容。"));
-        m_findDialog->raise();
-        m_findDialog->activateWindow();
-        return;
+    if (m_replaceDialog == nullptr) {
+        m_replaceDialog = new ReplaceDialog(this);
+
+        connect(m_replaceDialog, &ReplaceDialog::findRequested,
+                this, &MainWindow::onReplaceFindRequested);
+        connect(m_replaceDialog, &ReplaceDialog::replaceRequested, this,
+                [this](const QString &text, const QString &replacement, bool caseSensitive,
+                       bool backward) {
+                    replaceOne(text, replacement, caseSensitive, backward);
+                    bringToFront(m_replaceDialog);
+                });
+        connect(m_replaceDialog, &ReplaceDialog::replaceAllRequested, this,
+                [this](const QString &text, const QString &replacement, bool caseSensitive,
+                       bool backward) {
+                    replaceAll(text, replacement, caseSensitive, backward);
+                    bringToFront(m_replaceDialog);
+                });
     }
+
+    const QString selected = ui->textEdit->textCursor().selectedText();
+    if (!selected.isEmpty() && !selected.contains(QChar::ParagraphSeparator))
+        m_replaceDialog->setFindText(selected);
+
+    bringToFront(m_replaceDialog);
+}
+
+// 把非模态对话框显示出来并提到最前，方便接着操作
+void MainWindow::bringToFront(QWidget *dialog)
+{
+    if (dialog == nullptr)
+        return;
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
+}
+
+// 查找的核心：先按方向从光标处找，找不到再绕回文档另一头找一次。
+// 找不到返回空光标；wrapped 用来告诉调用方「这次是绕回来的」。
+QTextCursor MainWindow::findMatch(const QString &text, bool caseSensitive, bool backward,
+                                  bool *wrapped) const
+{
+    if (wrapped != nullptr)
+        *wrapped = false;
 
     QTextDocument::FindFlags flags;
     if (caseSensitive)
@@ -360,42 +395,153 @@ void MainWindow::findNext(const QString &text, bool caseSensitive, bool backward
     // 第一轮：从光标处开始找。光标带着上一次的匹配选区时，
     // QTextDocument::find 会从选区末尾（向上查找时是选区开头）接着搜，正好是「下一个」。
     QTextCursor found = doc->find(text, ui->textEdit->textCursor(), flags);
+    if (!found.isNull())
+        return found;
+
+    // 第二轮：已经到文档尽头了，绕回另一头再找一次
+    QTextCursor from(doc);
+    from.movePosition(backward ? QTextCursor::End : QTextCursor::Start);
+    found = doc->find(text, from, flags);
+    if (!found.isNull() && wrapped != nullptr)
+        *wrapped = true;
+    return found;
+}
+
+// 在编辑区里查找下一个匹配：
+// 找到就选中它并滚到可见处，光标带着选区，下次再点就从这个匹配后面继续；
+// 两头都没有才提示「找不到」，此时光标原地不动。
+void MainWindow::findNext(const QString &text, bool caseSensitive, bool backward)
+{
+    if (text.isEmpty()) {
+        QMessageBox::information(this, tr("查找"), tr("请先输入要查找的内容。"));
+        return;
+    }
 
     bool wrapped = false;
-    if (found.isNull()) {
-        // 第二轮：已经到文档尽头了，绕回另一头再找一次
-        QTextCursor from(doc);
-        from.movePosition(backward ? QTextCursor::End : QTextCursor::Start);
-        found = doc->find(text, from, flags);
-        wrapped = !found.isNull();
-    }
+    const QTextCursor found = findMatch(text, caseSensitive, backward, &wrapped);
 
     if (found.isNull()) {
         QMessageBox::information(this, tr("查找"), tr("找不到「%1」。").arg(text));
         statusBar()->showMessage(tr("未找到：%1").arg(text), 3000);
-    } else {
-        ui->textEdit->setTextCursor(found);
-        ui->textEdit->ensureCursorVisible();
-        statusBar()->showMessage(wrapped
-                                     ? tr("已绕回另一头，找到：%1").arg(text)
-                                     : tr("找到：%1").arg(text),
-                                 3000);
+        return;
     }
 
-    // 提示完把焦点还给对话框，方便接着改条件再按「查找下一个」
-    m_findDialog->raise();
-    m_findDialog->activateWindow();
+    ui->textEdit->setTextCursor(found);
+    ui->textEdit->ensureCursorVisible();
+    statusBar()->showMessage(wrapped ? tr("已绕回另一头，找到：%1").arg(text)
+                                     : tr("找到：%1").arg(text),
+                             3000);
 }
 
-// 替换对话框：非模态，同上
-void MainWindow::on_actionReplace_triggered()
+// 替换对话框里点「查找下一个」：和普通查找完全一样，只是查完把焦点还给它自己
+void MainWindow::onReplaceFindRequested(const QString &text, bool caseSensitive, bool backward)
 {
-    if (m_replaceDialog == nullptr)
-        m_replaceDialog = new ReplaceDialog(this);
+    findNext(text, caseSensitive, backward);
+    bringToFront(m_replaceDialog);
+}
 
-    m_replaceDialog->show();
-    m_replaceDialog->raise();
-    m_replaceDialog->activateWindow();
+// 替换一处：
+// 当前选中的文字正好是查找词，就直接换掉，再把下一个匹配选中，方便连着点；
+// 没选中（或选中的不是查找词）就先把下一个匹配找出来，等用户确认后再换。
+void MainWindow::replaceOne(const QString &text, const QString &replacement, bool caseSensitive,
+                            bool backward)
+{
+    if (text.isEmpty()) {
+        QMessageBox::information(this, tr("替换"), tr("请先输入要查找的内容。"));
+        return;
+    }
+
+    QTextCursor cursor = ui->textEdit->textCursor();
+    bool replaced = false;
+
+    if (cursor.hasSelection()) {
+        const QString selected = cursor.selectedText();
+        const bool same = caseSensitive ? (selected == text)
+                                        : (selected.compare(text, Qt::CaseInsensitive) == 0);
+        if (same) {
+            cursor.insertText(replacement);
+            replaced = true;
+        }
+    }
+
+    if (!replaced) {
+        bool wrapped = false;
+        const QTextCursor next = findMatch(text, caseSensitive, backward, &wrapped);
+        if (next.isNull()) {
+            QMessageBox::information(this, tr("替换"), tr("找不到「%1」。").arg(text));
+            statusBar()->showMessage(tr("未找到：%1").arg(text), 3000);
+            return;
+        }
+        ui->textEdit->setTextCursor(next);
+        ui->textEdit->ensureCursorVisible();
+        statusBar()->showMessage(tr("已找到「%1」，再点一次「替换」即可").arg(text), 3000);
+        return;
+    }
+
+    // 替换成功：顺手把下一个匹配选中
+    bool wrapped = false;
+    const QTextCursor next = findMatch(text, caseSensitive, backward, &wrapped);
+    if (next.isNull()) {
+        statusBar()->showMessage(tr("已替换 1 处，后面没有更多匹配了"), 3000);
+        return;
+    }
+    ui->textEdit->setTextCursor(next);
+    ui->textEdit->ensureCursorVisible();
+    statusBar()->showMessage(wrapped ? tr("已替换 1 处，并绕回另一头找到下一个")
+                                     : tr("已替换 1 处"),
+                             3000);
+}
+
+// 全部替换：整篇扫一遍，一个都不放过的同时合并成「一步」修改，
+// 这样按一次 Ctrl+Z 就能整篇回到替换前。
+void MainWindow::replaceAll(const QString &text, const QString &replacement, bool caseSensitive,
+                            bool backward)
+{
+    if (text.isEmpty()) {
+        QMessageBox::information(this, tr("替换"), tr("请先输入要查找的内容。"));
+        return;
+    }
+
+    QTextDocument *doc = ui->textEdit->document();
+
+    QTextDocument::FindFlags flags;
+    if (caseSensitive)
+        flags |= QTextDocument::FindCaseSensitively;
+    if (backward)
+        flags |= QTextDocument::FindBackward;
+
+    // 不管光标在哪，都从整篇的开头（向上替换时从末尾）开始
+    QTextCursor start(doc);
+    start.movePosition(backward ? QTextCursor::End : QTextCursor::Start);
+
+    int count = 0;
+    QTextCursor found = doc->find(text, start, flags);
+    if (!found.isNull()) {
+        // beginEditBlock / endEditBlock 之间的修改在撤销栈里合成一步
+        QTextCursor blockCursor(doc);
+        blockCursor.beginEditBlock();
+        while (!found.isNull()) {
+            const int replaceStart = found.selectionStart();
+            found.insertText(replacement);
+            ++count;
+
+            // 向下替换从替换后的位置接着找；向上替换回到替换处再往前找。
+            // 这样即使替换词里又含有查找词，也不会在原处打转。
+            QTextCursor from(doc);
+            from.setPosition(backward ? replaceStart : found.position());
+            found = doc->find(text, from, flags);
+        }
+        blockCursor.endEditBlock();
+    }
+
+    if (count == 0) {
+        QMessageBox::information(this, tr("替换"), tr("找不到「%1」。").arg(text));
+        statusBar()->showMessage(tr("未找到：%1").arg(text), 3000);
+        return;
+    }
+
+    statusBar()->showMessage(tr("共替换 %1 处").arg(count), 3000);
+    QMessageBox::information(this, tr("替换"), tr("共替换 %1 处。").arg(count));
 }
 
 // 关于对话框：只是看一眼，用模态，点 OK 或关闭按钮都返回

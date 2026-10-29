@@ -12,6 +12,7 @@ QT_END_NAMESPACE
 
 class QCloseEvent;
 class QColor;
+class QTextCursor;
 class FindDialog;
 class ReplaceDialog;
 
@@ -54,6 +55,14 @@ private slots:
     // 查找
     // 查找对话框点「查找下一个」时发来：查找词、是否区分大小写、是否向上
     void findNext(const QString &text, bool caseSensitive, bool backward);
+    // 同样是查找，但发来的是替换对话框：查完把焦点还给替换窗口
+    void onReplaceFindRequested(const QString &text, bool caseSensitive, bool backward);
+    // 替换：替换当前匹配，再选中下一个；没有选中匹配就先找出下一个
+    void replaceOne(const QString &text, const QString &replacement,
+                    bool caseSensitive, bool backward);
+    // 全部替换：整篇扫一遍，一次撤销就能全部回退
+    void replaceAll(const QString &text, const QString &replacement,
+                    bool caseSensitive, bool backward);
 
 private:
     void initStatusBar();                           // 把 .ui 里放好的信息标签挂到状态栏右侧
@@ -69,6 +78,11 @@ private:
     bool writeFile(const QString &path);            // 真正写盘
     bool loadFile(const QString &path);             // 读盘并显示到编辑区
     void setCurrentFile(const QString &path);       // 更新当前文件路径与标题
+    // 查找的核心：从光标处找下一个匹配，找不到就绕回另一头再找；
+    // 返回空光标表示两头都没有，wrapped 告诉调用方有没有绕过回
+    QTextCursor findMatch(const QString &text, bool caseSensitive, bool backward,
+                          bool *wrapped) const;
+    void bringToFront(QWidget *dialog);             // 把非模态对话框提到最前并聚焦
 
     Ui::MainWindow *ui;
 
