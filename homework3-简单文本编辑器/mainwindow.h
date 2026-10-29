@@ -11,6 +11,7 @@ class MainWindow;
 QT_END_NAMESPACE
 
 class QCloseEvent;
+class QColor;
 class FindDialog;
 class ReplaceDialog;
 
@@ -37,10 +38,21 @@ private slots:
     void on_actionExit_triggered();
     void updateWindowTitle();                       // 标题随文件名与修改状态变化
 
+    // 格式菜单
+    void on_actionFont_triggered();                 // 选字体
+    void on_actionFontColor_triggered();            // 字体颜色
+    void on_actionFontBackground_triggered();       // 字体背景色
+    void on_actionEditorBackground_triggered();     // 编辑器背景色
+    void on_actionWrap_toggled(bool checked);       // 自动换行
+    void on_actionLineNumbers_toggled(bool checked); // 显示/隐藏行号
+
 private:
     void initStatusBar();                           // 把 .ui 里放好的信息标签挂到状态栏右侧
     void initEditActions();                         // 编辑动作接上编辑区，并让使能状态跟着变
     void updateEditActions();                       // 按编辑区状态设置撤销/恢复/剪切/复制/粘贴是否可用
+    void applyTextColor(const QColor &color);       // 把颜色写到选中文字（没选中就整篇）
+    void applyTextBackground(const QColor &color);  // 把背景色写到选中文字（没选中就整篇）
+    void applyEditorBackground(const QColor &color);// 改编辑区底色
     bool maybeSave();                               // 有未保存修改时询问「保存 / 不保存 / 取消」
     bool saveFile();                                // 保存到当前文件；还没有路径时转为另存为
     bool saveFileAs();                              // 选择路径后保存

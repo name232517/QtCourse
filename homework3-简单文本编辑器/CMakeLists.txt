@@ -17,6 +17,8 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
+        codeeditor.cpp
+        codeeditor.h
         aboutdialog.cpp
         aboutdialog.h
         aboutdialog.ui
@@ -39,6 +41,9 @@ else()
         ${PROJECT_SOURCES}
     )
 endif()
+
+# uic 生成的 ui_mainwindow.h 里会 include 提升控件的头文件，需要把源码目录加进搜索路径
+target_include_directories(QT2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Svg 模块用于加载 qrc 中的 SVG 图标（QIcon 通过 qsvg 图像插件渲染）
 target_link_libraries(QT2 PRIVATE

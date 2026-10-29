@@ -22,8 +22,7 @@
 - 三个对话框由「编辑 → 查找 / 替换」「帮助 → 关于」打开：查找与替换为非模态窗口
   （只创建一次，关掉后再点菜单会重新显示），关于为模态窗口。
 
-尚未实现：编辑动作逻辑、查找替换的实际算法、行号、状态栏数字更新等（后续提交完成）。
-当前对话框中除「取消 / OK」外的按钮只搭好界面，功能在后续提交中接入。
+三个对话框先搭界面，查找替换的实际算法在后续提交中接入。
 
 ### 第三次提交：新建 / 打开 / 保存 / 另存为
 
@@ -49,6 +48,24 @@
 - 联动信号来自 `QTextDocument::undoAvailable / redoAvailable`、`QPlainTextEdit::copyAvailable /
   selectionChanged` 与 `QClipboard::dataChanged`，改内容、撤销重做、改变选区、复制别处内容都会刷新。
 
+### 第五次提交：格式菜单（字体、颜色、背景、自动换行、行号）
+
+- **字体**（`on_actionFont_triggered`）：`QFontDialog` 选字体字号，整篇编辑区跟着换，
+  行号栏宽度按新字体重算；
+- **字体颜色 / 字体背景色**：`QColorDialog` 取色后写进字符格式（`QTextCharFormat` 的
+  `foreground` / `background`）。有选中就只改选中部分，没选中就整篇改，之后输入的字符沿用；
+- **编辑器背景色**：改编辑区调色板的 `QPalette::Base`，与文字本身的背景色互不影响；
+- **自动换行**（`actionWrap`，可勾选）：勾选按窗口宽度换行，取消后长行不折行、出现横向滚动条；
+- **显示行号**（`actionLineNumbers`，Ctrl+L，可勾选）：编辑区由 `CodeEditor` 继承 `QPlainTextEdit`
+  实现——`LineNumberArea` 画在 viewport 左侧，`blockCountChanged` 时按行数位数重算宽度，
+  `updateRequest` 时跟随滚动重绘；在 `mainwindow.ui` 里把 `QPlainTextEdit` 提升（promote）为
+  `CodeEditor`；
+- 顺手修掉的问题：状态栏标签的行号宽度、提升控件后 `ui_mainwindow.h` 找不到 `codeeditor.h`
+  （`CMakeLists.txt` 里加 `target_include_directories`）。
+
+尚未实现：查看菜单（工具栏 / 状态栏的显示隐藏）、状态栏 `length / lines / Ln / Col` 的实时更新、
+查找替换的实际算法、定时自动保存（选做）。
+
 ## 二、目录结构
 
 ```
@@ -58,6 +75,8 @@ QT2/
 ├── mainwindow.h
 ├── mainwindow.cpp
 ├── mainwindow.ui        # 界面：菜单、工具栏、编辑区、状态栏
+├── codeeditor.h
+├── codeeditor.cpp       # 派生自 QPlainTextEdit，带行号栏
 ├── finddialog.h
 ├── finddialog.cpp
 ├── finddialog.ui        # 查找对话框

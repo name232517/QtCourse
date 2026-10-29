@@ -2,18 +2,22 @@
 #include "./ui_mainwindow.h"
 
 #include "aboutdialog.h"
+#include "codeeditor.h"
 #include "finddialog.h"
 #include "replacedialog.h"
 
 #include <QCloseEvent>
 #include <QClipboard>
+#include <QColorDialog>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontDialog>
 #include <QGuiApplication>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPalette>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTextDocument>
@@ -318,3 +322,100 @@ void MainWindow::on_actionAbout_triggered()
     AboutDialog dialog(this);
     dialog.exec();
 }
+
+// ---------------------------------------------------------------------------
+// 格式菜单：字体 / 字体颜色 / 字体背景色 / 编辑器背景色 / 自动换行 / 显示行号
+// ---------------------------------------------------------------------------
+
+void MainWindow::on_actionFont_triggered()
+{
+    bool ok = false;
+    const QFont font = QFontDialog::getFont(&ok, ui->textEdit->font(), this, tr("字体"));
+    if (!ok)   // 用户点了取消
+        return;
+
+    ui->textEdit->setFont(font);
+    ui->textEdit->refreshLineNumberArea();   // 字号变了，行号栏宽度要重新算
+
+    statusBar()->showMessage(tr("当前字体：%1 %2pt").arg(font.family()).arg(font.pointSize()), 3000);
+}
+
+void MainWindow::on_actionFontColor_triggered()
+{
+    // QPlainTextEdit 没有 textColor()，当前颜色从光标处的字符格式里取；没设过就用调色板的文字色
+    QColor current = ui->textEdit->textCursor().charFormat().foreground().color();
+    if (!current.isValid())
+        current = ui->textEdit->palette().color(QPalette::Text);
+
+    const QColor color = QColorDialog::getColor(current, this, tr("字体颜色"));
+    if (!color.isValid())
+        return;
+
+    applyTextColor(color);
+}
+
+void MainWindow::on_actionFontBackground_triggered()
+{
+    const QColor current = ui->textEdit->textCursor().charFormat().background().color();
+    const QColor color = QColorDialog::getColor(current, this, tr("字体背景色"));
+    if (!color.isValid())
+        return;
+
+    applyTextBackground(color);
+}
+
+void MainWindow::on_actionEditorBackground_triggered()
+{
+    const QColor current = ui->textEdit->palette().color(QPalette::Base);
+    const QColor color = QColorDialog::getColor(current, this, tr("编辑器背景色"));
+    if (!color.isValid())
+        return;
+
+    applyEditorBackground(color);
+}
+
+// 改文字颜色：有选中就只改选中的，没选中就整篇一起改
+void MainWindow::applyTextColor(const QColor &color)
+{
+    QTextCursor cursor = ui->textEdit->textCursor();
+    if (!cursor.hasSelection())
+        cursor.select(QTextCursor::Document);
+
+    QTextCharFormat format;
+    format.setForeground(color);
+    cursor.mergeCharFormat(format);
+    ui->textEdit->mergeCurrentCharFormat(format);   // 之后新输入的字也用这个颜色
+}
+
+// 改文字背景色：规则同字体颜色
+void MainWindow::applyTextBackground(const QColor &color)
+{
+    QTextCursor cursor = ui->textEdit->textCursor();
+    if (!cursor.hasSelection())
+        cursor.select(QTextCursor::Document);
+
+    QTextCharFormat format;
+    format.setBackground(color);
+    cursor.mergeCharFormat(format);
+    ui->textEdit->mergeCurrentCharFormat(format);
+}
+
+// 编辑器背景色单独走调色板，不影响文字本身的背景
+void MainWindow::applyEditorBackground(const QColor &color)
+{
+    QPalette palette = ui->textEdit->palette();
+    palette.setColor(QPalette::Base, color);
+    ui->textEdit->setPalette(palette);
+}
+
+void MainWindow::on_actionWrap_toggled(bool checked)
+{
+    ui->textEdit->setLineWrapMode(checked ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+}
+
+// 行号栏由 CodeEditor 自己维护，这里只转告开关
+void MainWindow::on_actionLineNumbers_toggled(bool checked)
+{
+    ui->textEdit->setLineNumbersVisible(checked);
+}
+
