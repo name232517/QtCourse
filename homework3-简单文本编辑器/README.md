@@ -63,8 +63,19 @@
 - 顺手修掉的问题：状态栏标签的行号宽度、提升控件后 `ui_mainwindow.h` 找不到 `codeeditor.h`
   （`CMakeLists.txt` 里加 `target_include_directories`）。
 
-尚未实现：查看菜单（工具栏 / 状态栏的显示隐藏）、状态栏 `length / lines / Ln / Col` 的实时更新、
-查找替换的实际算法、定时自动保存（选做）。
+尚未实现：查找替换的实际算法、定时自动保存（选做）。
+
+- **工具栏**（`actionToolBar`）、**状态栏**（`actionStatusBar`）两个可勾选菜单项，
+  分别控制 `mainToolBar` 与 `statusBar()` 的显示与隐藏；
+- 工具栏还能被右键菜单或浮动关掉，用 `QToolBar::visibilityChanged` 把菜单里的勾选同步回来
+  （改勾选时用 `QSignalBlocker` 挡住信号，避免来回触发）；
+- **状态栏数字接上实时数据**（函数 `updateStatusInfo()`）：
+  - `length`：编辑区总字符数；
+  - `lines`：总行数（`blockCount()`）；
+  - `Ln` / `Col`：光标所在行号与列号，都从 1 开始数；
+  - 触发时机是 `textChanged`、`cursorPositionChanged`、`selectionChanged`，打字、删字、点鼠标、框选都会刷新。
+
+尚未实现：查找替换的实际算法、定时自动保存（选做）。
 
 ## 二、目录结构
 

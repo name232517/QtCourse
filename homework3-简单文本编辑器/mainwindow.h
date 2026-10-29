@@ -46,8 +46,14 @@ private slots:
     void on_actionWrap_toggled(bool checked);       // 自动换行
     void on_actionLineNumbers_toggled(bool checked); // 显示/隐藏行号
 
+    // 查看菜单
+    void on_actionToolBar_toggled(bool checked);    // 显示/隐藏工具栏
+    void on_actionStatusBar_toggled(bool checked);  // 显示/隐藏状态栏
+    void updateStatusInfo();                        // 刷新状态栏的 length / lines / Ln / Col
+
 private:
     void initStatusBar();                           // 把 .ui 里放好的信息标签挂到状态栏右侧
+    void initViewActions();                         // 让工具栏/状态栏的勾选状态与实际显示同步
     void initEditActions();                         // 编辑动作接上编辑区，并让使能状态跟着变
     void updateEditActions();                       // 按编辑区状态设置撤销/恢复/剪切/复制/粘贴是否可用
     void applyTextColor(const QColor &color);       // 把颜色写到选中文字（没选中就整篇）

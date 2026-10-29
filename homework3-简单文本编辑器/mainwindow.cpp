@@ -1,4 +1,4 @@
-#include "mainwindow.h"
+﻿#include "mainwindow.h"
 #include "./ui_mainwindow.h"
 
 #include "aboutdialog.h"
@@ -18,10 +18,12 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPalette>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTextDocument>
 #include <QTextStream>
+#include <QToolBar>
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QStringConverter>
@@ -51,6 +53,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     initStatusBar();
     initEditActions();
+    initViewActions();
 
     // 编辑区内容一改，标题上的 * 跟着变
     connect(ui->textEdit->document(), &QTextDocument::modificationChanged,
@@ -77,6 +80,25 @@ void MainWindow::initStatusBar()
         label->setMinimumWidth(72);
         statusBar()->addPermanentWidget(label);
     }
+
+    // 状态栏里的数字跟着编辑区变化：改内容、移动光标都要刷新
+    connect(ui->textEdit, &QPlainTextEdit::textChanged, this, &MainWindow::updateStatusInfo);
+    connect(ui->textEdit, &QPlainTextEdit::cursorPositionChanged,
+            this, &MainWindow::updateStatusInfo);
+    connect(ui->textEdit, &QPlainTextEdit::selectionChanged, this, &MainWindow::updateStatusInfo);
+
+    updateStatusInfo();
+}
+
+// 刷新状态栏：总字符数、总行数、光标所在行与列（都从 1 开始数）
+void MainWindow::updateStatusInfo()
+{
+    const QTextCursor cursor = ui->textEdit->textCursor();
+
+    ui->labelLength->setText(tr("length: %1").arg(ui->textEdit->toPlainText().length()));
+    ui->labelLines->setText(tr("lines: %1").arg(ui->textEdit->blockCount()));
+    ui->labelLn->setText(tr("Ln: %1").arg(cursor.blockNumber() + 1));
+    ui->labelCol->setText(tr("Col: %1").arg(cursor.positionInBlock() + 1));
 }
 
 // ---------------------------------------------------------------------------
@@ -419,3 +441,32 @@ void MainWindow::on_actionLineNumbers_toggled(bool checked)
     ui->textEdit->setLineNumbersVisible(checked);
 }
 
+// ---------------------------------------------------------------------------
+// 查看菜单：工具栏、状态栏的显示与隐藏
+// ---------------------------------------------------------------------------
+
+// 打开程序时先让勾选状态和实际显示一致，再把两边的变化串起来：
+// 工具栏还能被右键菜单或拖动关掉，那时菜单里的勾也要取消
+void MainWindow::initViewActions()
+{
+    ui->mainToolBar->setVisible(ui->actionToolBar->isChecked());
+    statusBar()->setVisible(ui->actionStatusBar->isChecked());
+
+    connect(ui->mainToolBar, &QToolBar::visibilityChanged, this, [this](bool visible) {
+        if (ui->actionToolBar->isChecked() == visible)
+            return;
+
+        QSignalBlocker blocker(ui->actionToolBar);   // 挡住信号，避免来回切换
+        ui->actionToolBar->setChecked(visible);
+    });
+}
+
+void MainWindow::on_actionToolBar_toggled(bool checked)
+{
+    ui->mainToolBar->setVisible(checked);
+}
+
+void MainWindow::on_actionStatusBar_toggled(bool checked)
+{
+    statusBar()->setVisible(checked);
+}
