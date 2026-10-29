@@ -1,0 +1,19 @@
+# 构建产物与 IDE 临时文件
+build/
+build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.o
+*.obj
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+.qmake.stash
+
+# Qt Creator
+*.user
+*.user.*
+CMakeLists.txt.user*
+.qtcreator/

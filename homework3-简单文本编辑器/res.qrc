@@ -1,0 +1,27 @@
+<RCC>
+    <qresource prefix="/">
+        <file>images/file-outline.svg</file>
+        <file>images/folder-open-outline.svg</file>
+        <file>images/content-save-outline.svg</file>
+        <file>images/content-save-all-outline.svg</file>
+        <file>images/exit-to-app.svg</file>
+        <file>images/undo.svg</file>
+        <file>images/redo.svg</file>
+        <file>images/content-cut.svg</file>
+        <file>images/content-copy.svg</file>
+        <file>images/content-paste.svg</file>
+        <file>images/file-find-outline.svg</file>
+        <file>images/find-replace.svg</file>
+        <file>images/select-all.svg</file>
+        <file>images/wrap.svg</file>
+        <file>images/format-list-numbered.svg</file>
+        <file>images/format-font.svg</file>
+        <file>images/format-color-text.svg</file>
+        <file>images/format-color-highlight.svg</file>
+        <file>images/palette-outline.svg</file>
+        <file>images/wrench-outline.svg</file>
+        <file>images/dock-bottom.svg</file>
+        <file>images/information-outline.svg</file>
+        <file>images/notebook-outline.svg</file>
+    </qresource>
+</RCC>

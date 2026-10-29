@@ -1,0 +1,490 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>650</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>新建文本文件 - 编辑器</string>
+  </property>
+  <property name="windowIcon">
+   <iconset resource="res.qrc">
+    <normaloff>:/images/notebook-outline.svg</normaloff>:/images/notebook-outline.svg</iconset>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <property name="spacing">
+     <number>0</number>
+    </property>
+    <property name="leftMargin">
+     <number>0</number>
+    </property>
+    <property name="topMargin">
+     <number>0</number>
+    </property>
+    <property name="rightMargin">
+     <number>0</number>
+    </property>
+    <property name="bottomMargin">
+     <number>0</number>
+    </property>
+    <item>
+     <widget class="QPlainTextEdit" name="textEdit">
+      <property name="font">
+       <font>
+        <family>Consolas</family>
+        <pointsize>11</pointsize>
+       </font>
+      </property>
+      <property name="tabStopDistance">
+       <double>28.000000000000000</double>
+      </property>
+      <property name="lineWrapMode">
+       <enum>QPlainTextEdit::WidgetWidth</enum>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>900</width>
+     <height>26</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="title">
+     <string>文件(&amp;F)</string>
+    </property>
+    <addaction name="actionNew"/>
+    <addaction name="actionOpen"/>
+    <addaction name="actionSave"/>
+    <addaction name="actionSaveAs"/>
+    <addaction name="separator"/>
+    <addaction name="actionExit"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title">
+     <string>编辑(&amp;E)</string>
+    </property>
+    <addaction name="actionUndo"/>
+    <addaction name="actionRedo"/>
+    <addaction name="separator"/>
+    <addaction name="actionCut"/>
+    <addaction name="actionCopy"/>
+    <addaction name="actionPaste"/>
+    <addaction name="separator"/>
+    <addaction name="actionFind"/>
+    <addaction name="actionReplace"/>
+    <addaction name="separator"/>
+    <addaction name="actionSelectAll"/>
+   </widget>
+   <widget class="QMenu" name="menuFormat">
+    <property name="title">
+     <string>格式(&amp;O)</string>
+    </property>
+    <addaction name="actionWrap"/>
+    <addaction name="actionLineNumbers"/>
+    <addaction name="separator"/>
+    <addaction name="actionFont"/>
+    <addaction name="actionFontColor"/>
+    <addaction name="separator"/>
+    <addaction name="actionFontBackground"/>
+    <addaction name="actionEditorBackground"/>
+   </widget>
+   <widget class="QMenu" name="menuView">
+    <property name="title">
+     <string>查看(&amp;V)</string>
+    </property>
+    <addaction name="actionToolBar"/>
+    <addaction name="actionStatusBar"/>
+   </widget>
+   <widget class="QMenu" name="menuHelp">
+    <property name="title">
+     <string>帮助(&amp;H)</string>
+    </property>
+    <addaction name="actionAbout"/>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuEdit"/>
+   <addaction name="menuFormat"/>
+   <addaction name="menuView"/>
+   <addaction name="menuHelp"/>
+  </widget>
+  <widget class="QToolBar" name="mainToolBar">
+   <property name="windowTitle">
+    <string>主工具栏</string>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>22</width>
+     <height>22</height>
+    </size>
+   </property>
+   <property name="toolButtonStyle">
+    <enum>Qt::ToolButtonIconOnly</enum>
+   </property>
+   <property name="movable">
+    <bool>false</bool>
+   </property>
+   <property name="floatable">
+    <bool>false</bool>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="actionNew"/>
+   <addaction name="actionOpen"/>
+   <addaction name="actionSave"/>
+   <addaction name="actionSaveAs"/>
+   <addaction name="separator"/>
+   <addaction name="actionUndo"/>
+   <addaction name="actionRedo"/>
+   <addaction name="actionCut"/>
+   <addaction name="actionCopy"/>
+   <addaction name="actionPaste"/>
+   <addaction name="separator"/>
+   <addaction name="actionFind"/>
+   <addaction name="actionReplace"/>
+   <addaction name="separator"/>
+   <addaction name="actionFont"/>
+   <addaction name="actionLineNumbers"/>
+   <addaction name="actionWrap"/>
+   <addaction name="separator"/>
+   <addaction name="actionToolBar"/>
+   <addaction name="actionStatusBar"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar">
+   <property name="sizeGripEnabled">
+    <bool>true</bool>
+   </property>
+   <widget class="QLabel" name="labelLength">
+    <property name="geometry">
+     <rect>
+      <x>540</x>
+      <y>2</y>
+      <width>90</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>length: 0</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="labelLines">
+    <property name="geometry">
+     <rect>
+      <x>630</x>
+      <y>2</y>
+      <width>80</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>lines: 1</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="labelLn">
+    <property name="geometry">
+     <rect>
+      <x>710</x>
+      <y>2</y>
+      <width>60</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Ln: 1</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="labelCol">
+    <property name="geometry">
+     <rect>
+      <x>770</x>
+      <y>2</y>
+      <width>60</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Col: 1</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="labelName">
+    <property name="geometry">
+     <rect>
+      <x>830</x>
+      <y>2</y>
+      <width>50</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>刘文果</string>
+    </property>
+   </widget>
+  </widget>
+  <action name="actionNew">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/file-outline.svg</normaloff>:/images/file-outline.svg</iconset>
+   </property>
+   <property name="text">
+    <string>新建(&amp;N)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+N</string>
+   </property>
+  </action>
+  <action name="actionOpen">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/folder-open-outline.svg</normaloff>:/images/folder-open-outline.svg</iconset>
+   </property>
+   <property name="text">
+    <string>打开(&amp;O)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="actionSave">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/content-save-outline.svg</normaloff>:/images/content-save-outline.svg</iconset>
+   </property>
+   <property name="text">
+    <string>保存(&amp;S)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
+   </property>
+  </action>
+  <action name="actionSaveAs">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/content-save-all-outline.svg</normaloff>:/images/content-save-all-outline.svg</iconset>
+   </property>
+   <property name="text">
+    <string>另存为(&amp;A)</string>
+   </property>
+  </action>
+  <action name="actionExit">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/exit-to-app.svg</normaloff>:/images/exit-to-app.svg</iconset>
+   </property>
+   <property name="text">
+    <string>退出(&amp;X)</string>
+   </property>
+  </action>
+  <action name="actionUndo">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/undo.svg</normaloff>:/images/undo.svg</iconset>
+   </property>
+   <property name="text">
+    <string>撤销(&amp;U)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Z</string>
+   </property>
+  </action>
+  <action name="actionRedo">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/redo.svg</normaloff>:/images/redo.svg</iconset>
+   </property>
+   <property name="text">
+    <string>恢复(&amp;I)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+Z</string>
+   </property>
+  </action>
+  <action name="actionCut">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/content-cut.svg</normaloff>:/images/content-cut.svg</iconset>
+   </property>
+   <property name="text">
+    <string>剪切(&amp;T)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+X</string>
+   </property>
+  </action>
+  <action name="actionCopy">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/content-copy.svg</normaloff>:/images/content-copy.svg</iconset>
+   </property>
+   <property name="text">
+    <string>复制(&amp;C)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+C</string>
+   </property>
+  </action>
+  <action name="actionPaste">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/content-paste.svg</normaloff>:/images/content-paste.svg</iconset>
+   </property>
+   <property name="text">
+    <string>粘贴(&amp;P)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+V</string>
+   </property>
+  </action>
+  <action name="actionFind">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/file-find-outline.svg</normaloff>:/images/file-find-outline.svg</iconset>
+   </property>
+   <property name="text">
+    <string>查找(&amp;F)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F</string>
+   </property>
+  </action>
+  <action name="actionReplace">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/find-replace.svg</normaloff>:/images/find-replace.svg</iconset>
+   </property>
+   <property name="text">
+    <string>替换(&amp;R)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+H</string>
+   </property>
+  </action>
+  <action name="actionSelectAll">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/select-all.svg</normaloff>:/images/select-all.svg</iconset>
+   </property>
+   <property name="text">
+    <string>全选(&amp;A)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+A</string>
+   </property>
+  </action>
+  <action name="actionWrap">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/wrap.svg</normaloff>:/images/wrap.svg</iconset>
+   </property>
+   <property name="text">
+    <string>自动换行(&amp;W)</string>
+   </property>
+  </action>
+  <action name="actionLineNumbers">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/format-list-numbered.svg</normaloff>:/images/format-list-numbered.svg</iconset>
+   </property>
+   <property name="text">
+    <string>显示行号(&amp;L)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+L</string>
+   </property>
+  </action>
+  <action name="actionFont">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/format-font.svg</normaloff>:/images/format-font.svg</iconset>
+   </property>
+   <property name="text">
+    <string>字体(&amp;F)</string>
+   </property>
+  </action>
+  <action name="actionFontColor">
+   <property name="text">
+    <string>字体颜色</string>
+   </property>
+  </action>
+  <action name="actionFontBackground">
+   <property name="text">
+    <string>字体背景色</string>
+   </property>
+  </action>
+  <action name="actionEditorBackground">
+   <property name="text">
+    <string>编辑器背景色</string>
+   </property>
+  </action>
+  <action name="actionToolBar">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/wrench-outline.svg</normaloff>:/images/wrench-outline.svg</iconset>
+   </property>
+   <property name="text">
+    <string>工具栏(&amp;T)</string>
+   </property>
+  </action>
+  <action name="actionStatusBar">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/dock-bottom.svg</normaloff>:/images/dock-bottom.svg</iconset>
+   </property>
+   <property name="text">
+    <string>状态栏(&amp;S)</string>
+   </property>
+  </action>
+  <action name="actionAbout">
+   <property name="icon">
+    <iconset resource="res.qrc">
+     <normaloff>:/images/information-outline.svg</normaloff>:/images/information-outline.svg</iconset>
+   </property>
+   <property name="text">
+    <string>关于(&amp;A)</string>
+   </property>
+  </action>
+ </widget>
+ <resources>
+  <include location="res.qrc"/>
+ </resources>
+ <connections/>
+</ui>
