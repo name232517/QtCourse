@@ -9,12 +9,11 @@ CodeEditor::CodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
     , m_lineNumberArea(new LineNumberArea(this))
 {
-    // 行数变了要重算宽度；滚动或重绘时行号栏跟着刷新
+
     connect(this, &QPlainTextEdit::blockCountChanged, this,
             [this](int) { updateLineNumberAreaWidth(); });
     connect(this, &QPlainTextEdit::updateRequest, this, &CodeEditor::updateLineNumberArea);
 
-    // 光标换行时要重画行号栏（把当前行的行号高亮挪过去）
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, [this] {
         if (m_visible)
             m_lineNumberArea->update();
@@ -23,7 +22,6 @@ CodeEditor::CodeEditor(QWidget *parent)
     updateLineNumberAreaWidth();
 }
 
-// 宽度 = 左右留白 + 最大行号的位数 × 一个数字的宽度
 int CodeEditor::lineNumberAreaWidth() const
 {
     if (!m_visible)
@@ -49,13 +47,11 @@ void CodeEditor::setLineNumbersVisible(bool visible)
     updateLineNumberAreaWidth();
 }
 
-// 把行号栏挂到编辑区左侧：给 viewport 留出左边的边距
 void CodeEditor::updateLineNumberAreaWidth()
 {
     const int width = lineNumberAreaWidth();
     setViewportMargins(width, 0, 0, 0);
 
-    // 边距一变，行号栏自己的位置也要跟着挪，否则会留出空白或压住文字
     const QRect cr = contentsRect();
     m_lineNumberArea->setGeometry(QRect(cr.left(), cr.top(), width, cr.height()));
 }
@@ -67,7 +63,6 @@ void CodeEditor::refreshLineNumberArea()
         m_lineNumberArea->update();
 }
 
-// 点行号栏：把那一行整行选中，光标也放到行首，方便直接复制或删除
 void CodeEditor::selectLineAt(int y)
 {
     if (!m_visible)
@@ -86,7 +81,7 @@ void CodeEditor::updateLineNumberArea(const QRect &rect, int dy)
         return;
 
     if (dy != 0)
-        m_lineNumberArea->scroll(0, dy);   // 内容整体滚动，行号跟着滚即可
+        m_lineNumberArea->scroll(0, dy);
     else
         m_lineNumberArea->update(0, rect.y(), m_lineNumberArea->width(), rect.height());
 
@@ -106,7 +101,7 @@ void CodeEditor::resizeEvent(QResizeEvent *event)
 void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event)
 {
     QPainter painter(m_lineNumberArea);
-    painter.fillRect(event->rect(), QColor(0xFD, 0xF6, 0xE3));   // 淡黄底，与参考界面一致
+    painter.fillRect(event->rect(), QColor(0xFD, 0xF6, 0xE3));
 
     const int currentLine = textCursor().blockNumber();
 
@@ -119,7 +114,6 @@ void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event)
         if (block.isVisible() && bottom >= event->rect().top()) {
             const bool isCurrent = (blockNumber == currentLine);
 
-            // 当前行：整条行号底色加深一点，数字也加深，方便一眼看到光标在哪一行
             if (isCurrent) {
                 painter.fillRect(QRect(0, top, m_lineNumberArea->width(),
                                        qRound(blockBoundingRect(block).height())),

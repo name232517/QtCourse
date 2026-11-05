@@ -6,9 +6,6 @@
 
 class LineNumberArea;
 
-// 自定义的可显示行号的文本编辑控件：
-// 继承 QPlainTextEdit，在左侧留出一条边（viewportMargins），由一个子控件 LineNumberArea 负责绘制行号。
-// 在 Qt Designer 里通过「提升（promote）」把 QPlainTextEdit 换成这个类即可使用。
 class CodeEditor : public QPlainTextEdit
 {
     Q_OBJECT
@@ -16,15 +13,15 @@ class CodeEditor : public QPlainTextEdit
 public:
     explicit CodeEditor(QWidget *parent = nullptr);
 
-    int lineNumberAreaWidth() const;          // 行号栏需要多宽（跟总行数位数、字体有关）
-    int reservedWidth() const { return viewportMargins().left(); }   // 行号栏实际占掉的宽度
+    int lineNumberAreaWidth() const;
+    int reservedWidth() const { return viewportMargins().left(); }
     void lineNumberAreaPaintEvent(QPaintEvent *event);
-    void refreshLineNumberArea();             // 字体变化后重新算宽度并重绘
+    void refreshLineNumberArea();
 
     void setLineNumbersVisible(bool visible);
     bool isLineNumbersVisible() const { return m_visible; }
 
-    void selectLineAt(int y);                 // 点击行号栏时选中那一整行
+    void selectLineAt(int y);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -37,7 +34,6 @@ private:
     bool m_visible = true;
 };
 
-// 行号栏本身：只负责接事件、把自己画出来，真正的绘制交给 CodeEditor
 class LineNumberArea : public QWidget
 {
 public:
@@ -52,7 +48,6 @@ public:
 protected:
     void paintEvent(QPaintEvent *event) override { m_editor->lineNumberAreaPaintEvent(event); }
 
-    // 点行号栏 = 选中这一行
     void mousePressEvent(QMouseEvent *event) override
     {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -67,4 +62,4 @@ private:
     CodeEditor *m_editor;
 };
 
-#endif // CODEEDITOR_H
+#endif

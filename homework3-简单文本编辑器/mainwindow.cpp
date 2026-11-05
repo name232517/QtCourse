@@ -33,7 +33,6 @@
 
 namespace {
 
-// 统一用 UTF-8 读写文本：Qt 6 用 setEncoding，Qt 5 用 setCodec
 void setUtf8Encoding(QTextStream &stream)
 {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -45,7 +44,7 @@ void setUtf8Encoding(QTextStream &stream)
 
 const char *const kFileFilter = "文本文件 (*.txt);;所有文件 (*.*)";
 
-} // namespace
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -57,13 +56,10 @@ MainWindow::MainWindow(QWidget *parent)
     initEditActions();
     initViewActions();
 
-    // 设计器里「显示行号」默认是勾上的，这里按勾选状态同步一次，
-    // 免得以后改了 .ui 的默认值、程序里的行号栏却不跟着变
     on_actionLineNumbers_toggled(ui->actionLineNumbers->isChecked());
 
     initAutoSave();
 
-    // 编辑区内容一改，标题上的 * 跟着变
     connect(ui->textEdit->document(), &QTextDocument::modificationChanged,
             this, &MainWindow::updateWindowTitle);
 
@@ -76,9 +72,6 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-// 状态栏信息区：length / lines / Ln / Col / 姓名
-// 标签先在设计器里建好（设置文字与对齐），运行时再挂成 permanent 部件，
-// 这样它们会一直贴在状态栏右端，窗口缩放时也不会被临时提示信息挤掉。
 void MainWindow::initStatusBar()
 {
     const QList<QLabel *> labels = {ui->labelLength, ui->labelLines, ui->labelLn,
@@ -89,7 +82,6 @@ void MainWindow::initStatusBar()
         statusBar()->addPermanentWidget(label);
     }
 
-    // 状态栏里的数字跟着编辑区变化：改内容、移动光标都要刷新
     connect(ui->textEdit, &QPlainTextEdit::textChanged, this, &MainWindow::updateStatusInfo);
     connect(ui->textEdit, &QPlainTextEdit::cursorPositionChanged,
             this, &MainWindow::updateStatusInfo);
@@ -98,7 +90,6 @@ void MainWindow::initStatusBar()
     updateStatusInfo();
 }
 
-// 刷新状态栏：总字符数、总行数、光标所在行与列（都从 1 开始数）
 void MainWindow::updateStatusInfo()
 {
     const QTextCursor cursor = ui->textEdit->textCursor();
@@ -109,12 +100,6 @@ void MainWindow::updateStatusInfo()
     ui->labelCol->setText(tr("Col: %1").arg(cursor.positionInBlock() + 1));
 }
 
-// ---------------------------------------------------------------------------
-// 编辑菜单：撤销 / 恢复 / 剪切 / 复制 / 粘贴 / 全选
-// ---------------------------------------------------------------------------
-
-// 把 Action 接到编辑区上同名操作，并让它们的可用状态跟着编辑区实时变化：
-// 没有可撤销的步骤、没有选中文字、剪贴板里没有文本时，对应菜单项和工具栏按钮变灰。
 void MainWindow::initEditActions()
 {
     connect(ui->actionUndo, &QAction::triggered, ui->textEdit, &QPlainTextEdit::undo);
@@ -124,7 +109,6 @@ void MainWindow::initEditActions()
     connect(ui->actionPaste, &QAction::triggered, ui->textEdit, &QPlainTextEdit::paste);
     connect(ui->actionSelectAll, &QAction::triggered, ui->textEdit, &QPlainTextEdit::selectAll);
 
-    // 这些信号覆盖了「改内容 / 撤销重做 / 选中变化 / 剪贴板变化」四种情况
     QTextDocument *doc = ui->textEdit->document();
     connect(doc, &QTextDocument::undoAvailable, this, &MainWindow::updateEditActions);
     connect(doc, &QTextDocument::redoAvailable, this, &MainWindow::updateEditActions);
@@ -143,12 +127,11 @@ void MainWindow::updateEditActions()
 
     ui->actionUndo->setEnabled(doc->isUndoAvailable());
     ui->actionRedo->setEnabled(doc->isRedoAvailable());
-    ui->actionCut->setEnabled(hasSelection);    // 没选中东西时剪切/复制无意义
+    ui->actionCut->setEnabled(hasSelection);
     ui->actionCopy->setEnabled(hasSelection);
     ui->actionPaste->setEnabled(ui->textEdit->canPaste());
 }
 
-// 标题格式：*文件名 - 编辑器（有未保存修改时前面加 *）
 void MainWindow::updateWindowTitle()
 {
     const QString name = m_filePath.isEmpty() ? tr("新建文本文件")
@@ -158,7 +141,6 @@ void MainWindow::updateWindowTitle()
     setWindowTitle(QStringLiteral("%1%2 - %3").arg(mark, name, tr("编辑器")));
 }
 
-// 记下当前文件：路径为空表示新建的、还没保存过
 void MainWindow::setCurrentFile(const QString &path)
 {
     m_filePath = path;
@@ -166,13 +148,9 @@ void MainWindow::setCurrentFile(const QString &path)
     updateWindowTitle();
 }
 
-// ---------------------------------------------------------------------------
-// 文件菜单：新建 / 打开 / 保存 / 另存为 / 退出
-// ---------------------------------------------------------------------------
-
 void MainWindow::on_actionNew_triggered()
 {
-    if (!maybeSave())   // 当前文档有改动时，先问要不要保存
+    if (!maybeSave())
         return;
 
     ui->textEdit->clear();
@@ -187,7 +165,7 @@ void MainWindow::on_actionOpen_triggered()
 
     const QString path = QFileDialog::getOpenFileName(this, tr("打开文件"), m_lastDir,
                                                       tr(kFileFilter));
-    if (path.isEmpty())   // 用户点了取消
+    if (path.isEmpty())
         return;
 
     loadFile(path);
@@ -205,7 +183,7 @@ void MainWindow::on_actionSaveAs_triggered()
 
 void MainWindow::on_actionExit_triggered()
 {
-    close();   // 走 closeEvent，同样会提示保存
+    close();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -240,7 +218,7 @@ bool MainWindow::maybeSave()
 
 bool MainWindow::saveFile()
 {
-    if (m_filePath.isEmpty())   // 新建的文档，先问路径
+    if (m_filePath.isEmpty())
         return saveFileAs();
 
     return writeFile(m_filePath);
@@ -253,7 +231,7 @@ bool MainWindow::saveFileAs()
         path = QDir(m_lastDir).filePath(QStringLiteral("新建文本文件.txt"));
 
     path = QFileDialog::getSaveFileName(this, tr("另存为"), path, tr(kFileFilter));
-    if (path.isEmpty())   // 用户点了取消
+    if (path.isEmpty())
         return false;
 
     return writeFile(path);
@@ -264,7 +242,7 @@ bool MainWindow::writeFile(const QString &path, bool autoSaved)
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
         const QString reason = file.errorString();
-        if (autoSaved) {   // 自动保存失败不打断输入，只在状态栏留一句
+        if (autoSaved) {
             statusBar()->showMessage(tr("自动保存失败：%1").arg(reason), 5000);
         } else {
             QMessageBox::critical(this, tr("保存失败"),
@@ -331,11 +309,6 @@ bool MainWindow::loadFile(const QString &path)
     return true;
 }
 
-// ---------------------------------------------------------------------------
-// 对话框
-// ---------------------------------------------------------------------------
-
-// 查找对话框：非模态，可以一边开着一边看编辑区
 void MainWindow::on_actionFind_triggered()
 {
     if (m_findDialog == nullptr) {
@@ -347,7 +320,6 @@ void MainWindow::on_actionFind_triggered()
                 });
     }
 
-    // 编辑区里正好选中了一段文字，就把它填进「查找目标」，省得再敲一遍
     const QString selected = ui->textEdit->textCursor().selectedText();
     if (!selected.isEmpty() && !selected.contains(QChar::ParagraphSeparator))
         m_findDialog->setFindText(selected);
@@ -355,7 +327,6 @@ void MainWindow::on_actionFind_triggered()
     bringToFront(m_findDialog);
 }
 
-// 替换对话框：非模态，同样可以一边开着一边看编辑区
 void MainWindow::on_actionReplace_triggered()
 {
     if (m_replaceDialog == nullptr) {
@@ -384,7 +355,6 @@ void MainWindow::on_actionReplace_triggered()
     bringToFront(m_replaceDialog);
 }
 
-// 把非模态对话框显示出来并提到最前，方便接着操作
 void MainWindow::bringToFront(QWidget *dialog)
 {
     if (dialog == nullptr)
@@ -394,8 +364,6 @@ void MainWindow::bringToFront(QWidget *dialog)
     dialog->activateWindow();
 }
 
-// 查找的核心：先按方向从光标处找，找不到再绕回文档另一头找一次。
-// 找不到返回空光标；wrapped 用来告诉调用方「这次是绕回来的」。
 QTextCursor MainWindow::findMatch(const QString &text, bool caseSensitive, bool backward,
                                   bool *wrapped) const
 {
@@ -410,13 +378,10 @@ QTextCursor MainWindow::findMatch(const QString &text, bool caseSensitive, bool 
 
     QTextDocument *doc = ui->textEdit->document();
 
-    // 第一轮：从光标处开始找。光标带着上一次的匹配选区时，
-    // QTextDocument::find 会从选区末尾（向上查找时是选区开头）接着搜，正好是「下一个」。
     QTextCursor found = doc->find(text, ui->textEdit->textCursor(), flags);
     if (!found.isNull())
         return found;
 
-    // 第二轮：已经到文档尽头了，绕回另一头再找一次
     QTextCursor from(doc);
     from.movePosition(backward ? QTextCursor::End : QTextCursor::Start);
     found = doc->find(text, from, flags);
@@ -425,9 +390,6 @@ QTextCursor MainWindow::findMatch(const QString &text, bool caseSensitive, bool 
     return found;
 }
 
-// 在编辑区里查找下一个匹配：
-// 找到就选中它并滚到可见处，光标带着选区，下次再点就从这个匹配后面继续；
-// 两头都没有才提示「找不到」，此时光标原地不动。
 void MainWindow::findNext(const QString &text, bool caseSensitive, bool backward)
 {
     if (text.isEmpty()) {
@@ -451,16 +413,12 @@ void MainWindow::findNext(const QString &text, bool caseSensitive, bool backward
                              3000);
 }
 
-// 替换对话框里点「查找下一个」：和普通查找完全一样，只是查完把焦点还给它自己
 void MainWindow::onReplaceFindRequested(const QString &text, bool caseSensitive, bool backward)
 {
     findNext(text, caseSensitive, backward);
     bringToFront(m_replaceDialog);
 }
 
-// 替换一处：
-// 当前选中的文字正好是查找词，就直接换掉，再把下一个匹配选中，方便连着点；
-// 没选中（或选中的不是查找词）就先把下一个匹配找出来，等用户确认后再换。
 void MainWindow::replaceOne(const QString &text, const QString &replacement, bool caseSensitive,
                             bool backward)
 {
@@ -496,7 +454,6 @@ void MainWindow::replaceOne(const QString &text, const QString &replacement, boo
         return;
     }
 
-    // 替换成功：顺手把下一个匹配选中
     bool wrapped = false;
     const QTextCursor next = findMatch(text, caseSensitive, backward, &wrapped);
     if (next.isNull()) {
@@ -510,8 +467,6 @@ void MainWindow::replaceOne(const QString &text, const QString &replacement, boo
                              3000);
 }
 
-// 全部替换：整篇扫一遍，一个都不放过的同时合并成「一步」修改，
-// 这样按一次 Ctrl+Z 就能整篇回到替换前。
 void MainWindow::replaceAll(const QString &text, const QString &replacement, bool caseSensitive,
                             bool backward)
 {
@@ -528,14 +483,13 @@ void MainWindow::replaceAll(const QString &text, const QString &replacement, boo
     if (backward)
         flags |= QTextDocument::FindBackward;
 
-    // 不管光标在哪，都从整篇的开头（向上替换时从末尾）开始
     QTextCursor start(doc);
     start.movePosition(backward ? QTextCursor::End : QTextCursor::Start);
 
     int count = 0;
     QTextCursor found = doc->find(text, start, flags);
     if (!found.isNull()) {
-        // beginEditBlock / endEditBlock 之间的修改在撤销栈里合成一步
+
         QTextCursor blockCursor(doc);
         blockCursor.beginEditBlock();
         while (!found.isNull()) {
@@ -543,8 +497,6 @@ void MainWindow::replaceAll(const QString &text, const QString &replacement, boo
             found.insertText(replacement);
             ++count;
 
-            // 向下替换从替换后的位置接着找；向上替换回到替换处再往前找。
-            // 这样即使替换词里又含有查找词，也不会在原处打转。
             QTextCursor from(doc);
             from.setPosition(backward ? replaceStart : found.position());
             found = doc->find(text, from, flags);
@@ -562,33 +514,28 @@ void MainWindow::replaceAll(const QString &text, const QString &replacement, boo
     QMessageBox::information(this, tr("替换"), tr("共替换 %1 处。").arg(count));
 }
 
-// 关于对话框：只是看一眼，用模态，点 OK 或关闭按钮都返回
 void MainWindow::on_actionAbout_triggered()
 {
     AboutDialog dialog(this);
     dialog.exec();
 }
 
-// ---------------------------------------------------------------------------
-// 格式菜单：字体 / 字体颜色 / 字体背景色 / 编辑器背景色 / 自动换行 / 显示行号
-// ---------------------------------------------------------------------------
-
 void MainWindow::on_actionFont_triggered()
 {
     bool ok = false;
     const QFont font = QFontDialog::getFont(&ok, ui->textEdit->font(), this, tr("字体"));
-    if (!ok)   // 用户点了取消
+    if (!ok)
         return;
 
     ui->textEdit->setFont(font);
-    ui->textEdit->refreshLineNumberArea();   // 字号变了，行号栏宽度要重新算
+    ui->textEdit->refreshLineNumberArea();
 
     statusBar()->showMessage(tr("当前字体：%1 %2pt").arg(font.family()).arg(font.pointSize()), 3000);
 }
 
 void MainWindow::on_actionFontColor_triggered()
 {
-    // QPlainTextEdit 没有 textColor()，当前颜色从光标处的字符格式里取；没设过就用调色板的文字色
+
     QColor current = ui->textEdit->textCursor().charFormat().foreground().color();
     if (!current.isValid())
         current = ui->textEdit->palette().color(QPalette::Text);
@@ -620,7 +567,6 @@ void MainWindow::on_actionEditorBackground_triggered()
     applyEditorBackground(color);
 }
 
-// 改文字颜色：有选中就只改选中的，没选中就整篇一起改
 void MainWindow::applyTextColor(const QColor &color)
 {
     QTextCursor cursor = ui->textEdit->textCursor();
@@ -630,10 +576,9 @@ void MainWindow::applyTextColor(const QColor &color)
     QTextCharFormat format;
     format.setForeground(color);
     cursor.mergeCharFormat(format);
-    ui->textEdit->mergeCurrentCharFormat(format);   // 之后新输入的字也用这个颜色
+    ui->textEdit->mergeCurrentCharFormat(format);
 }
 
-// 改文字背景色：规则同字体颜色
 void MainWindow::applyTextBackground(const QColor &color)
 {
     QTextCursor cursor = ui->textEdit->textCursor();
@@ -646,7 +591,6 @@ void MainWindow::applyTextBackground(const QColor &color)
     ui->textEdit->mergeCurrentCharFormat(format);
 }
 
-// 编辑器背景色单独走调色板，不影响文字本身的背景
 void MainWindow::applyEditorBackground(const QColor &color)
 {
     QPalette palette = ui->textEdit->palette();
@@ -659,23 +603,18 @@ void MainWindow::on_actionWrap_toggled(bool checked)
     ui->textEdit->setLineWrapMode(checked ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
 }
 
-// 行号栏由 CodeEditor 自己维护，这里只转告开关
 void MainWindow::on_actionLineNumbers_toggled(bool checked)
 {
     if (ui->textEdit->isLineNumbersVisible() == checked)
-        return;   // 启动时按 .ui 的勾选状态同步一次，状态没变就不必提示
+        return;
 
     ui->textEdit->setLineNumbersVisible(checked);
-    ui->textEdit->ensureCursorVisible();   // 边距变了，保证光标还在可见范围内
+    ui->textEdit->ensureCursorVisible();
     statusBar()->showMessage(checked ? tr("已显示行号") : tr("已隐藏行号"), 2000);
 }
 
-// ---------------------------------------------------------------------------
-// 定时自动保存（选做）
-// ---------------------------------------------------------------------------
-
 namespace {
-// 多久自动存一次：30 秒足够应付「写了半天忘了按 Ctrl+S」的情况，又不至于频繁写盘
+
 const int kAutoSaveIntervalMs = 30 * 1000;
 }
 
@@ -687,8 +626,6 @@ void MainWindow::initAutoSave()
     m_autoSaveTimer->start();
 }
 
-// 到点了看一眼：只有「已经有文件路径」且「确实改过」才写盘，
-// 新建还没保存过的文档不碰 —— 否则就得弹「另存为」对话框，反而打断打字。
 void MainWindow::autoSave()
 {
     if (m_filePath.isEmpty())
@@ -700,12 +637,6 @@ void MainWindow::autoSave()
     writeFile(m_filePath, true);
 }
 
-// ---------------------------------------------------------------------------
-// 查看菜单：工具栏、状态栏的显示与隐藏
-// ---------------------------------------------------------------------------
-
-// 打开程序时先让勾选状态和实际显示一致，再把两边的变化串起来：
-// 工具栏还能被右键菜单或拖动关掉，那时菜单里的勾也要取消
 void MainWindow::initViewActions()
 {
     ui->mainToolBar->setVisible(ui->actionToolBar->isChecked());
@@ -715,7 +646,7 @@ void MainWindow::initViewActions()
         if (ui->actionToolBar->isChecked() == visible)
             return;
 
-        QSignalBlocker blocker(ui->actionToolBar);   // 挡住信号，避免来回切换
+        QSignalBlocker blocker(ui->actionToolBar);
         ui->actionToolBar->setChecked(visible);
     });
 }

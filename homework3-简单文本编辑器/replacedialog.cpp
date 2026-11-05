@@ -7,13 +7,12 @@ ReplaceDialog::ReplaceDialog(QWidget *parent)
 {
     ui->setupUi(this);
 
-    // 非模态窗口，取消按钮只关闭自己
     connect(ui->btnCancel, &QPushButton::clicked, this, &QDialog::reject);
 
     connect(ui->btnFindNext, &QPushButton::clicked, this, &ReplaceDialog::onFindClicked);
     connect(ui->btnReplace, &QPushButton::clicked, this, &ReplaceDialog::onReplaceClicked);
     connect(ui->btnReplaceAll, &QPushButton::clicked, this, &ReplaceDialog::onReplaceAllClicked);
-    // 在「查找目标」里按回车 = 查找下一个
+
     connect(ui->lineEditFind, &QLineEdit::returnPressed, this, &ReplaceDialog::onFindClicked);
 }
 
