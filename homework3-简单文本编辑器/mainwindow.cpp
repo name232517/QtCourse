@@ -24,6 +24,7 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextStream>
+#include <QTimer>
 #include <QToolBar>
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -55,6 +56,12 @@ MainWindow::MainWindow(QWidget *parent)
     initStatusBar();
     initEditActions();
     initViewActions();
+
+    // 设计器里「显示行号」默认是勾上的，这里按勾选状态同步一次，
+    // 免得以后改了 .ui 的默认值、程序里的行号栏却不跟着变
+    on_actionLineNumbers_toggled(ui->actionLineNumbers->isChecked());
+
+    initAutoSave();
 
     // 编辑区内容一改，标题上的 * 跟着变
     connect(ui->textEdit->document(), &QTextDocument::modificationChanged,
@@ -252,13 +259,18 @@ bool MainWindow::saveFileAs()
     return writeFile(path);
 }
 
-bool MainWindow::writeFile(const QString &path)
+bool MainWindow::writeFile(const QString &path, bool autoSaved)
 {
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-        QMessageBox::critical(this, tr("保存失败"),
-                              tr("无法写入文件：\n%1\n\n原因：%2")
-                                  .arg(QDir::toNativeSeparators(path), file.errorString()));
+        const QString reason = file.errorString();
+        if (autoSaved) {   // 自动保存失败不打断输入，只在状态栏留一句
+            statusBar()->showMessage(tr("自动保存失败：%1").arg(reason), 5000);
+        } else {
+            QMessageBox::critical(this, tr("保存失败"),
+                                  tr("无法写入文件：\n%1\n\n原因：%2")
+                                      .arg(QDir::toNativeSeparators(path), reason));
+        }
         return false;
     }
 
@@ -272,15 +284,21 @@ bool MainWindow::writeFile(const QString &path)
     file.close();
 
     if (!ok) {
-        QMessageBox::critical(this, tr("保存失败"),
-                              tr("写入文件时出错：\n%1\n\n原因：%2")
-                                  .arg(QDir::toNativeSeparators(path), error));
+        if (autoSaved) {
+            statusBar()->showMessage(tr("自动保存失败：%1").arg(error), 5000);
+        } else {
+            QMessageBox::critical(this, tr("保存失败"),
+                                  tr("写入文件时出错：\n%1\n\n原因：%2")
+                                      .arg(QDir::toNativeSeparators(path), error));
+        }
         return false;
     }
 
     m_lastDir = QFileInfo(path).absolutePath();
     setCurrentFile(path);
-    statusBar()->showMessage(tr("已保存到 %1").arg(QDir::toNativeSeparators(path)), 3000);
+    statusBar()->showMessage(autoSaved ? tr("已自动保存到 %1").arg(QDir::toNativeSeparators(path))
+                                       : tr("已保存到 %1").arg(QDir::toNativeSeparators(path)),
+                             3000);
     return true;
 }
 
@@ -644,7 +662,42 @@ void MainWindow::on_actionWrap_toggled(bool checked)
 // 行号栏由 CodeEditor 自己维护，这里只转告开关
 void MainWindow::on_actionLineNumbers_toggled(bool checked)
 {
+    if (ui->textEdit->isLineNumbersVisible() == checked)
+        return;   // 启动时按 .ui 的勾选状态同步一次，状态没变就不必提示
+
     ui->textEdit->setLineNumbersVisible(checked);
+    ui->textEdit->ensureCursorVisible();   // 边距变了，保证光标还在可见范围内
+    statusBar()->showMessage(checked ? tr("已显示行号") : tr("已隐藏行号"), 2000);
+}
+
+// ---------------------------------------------------------------------------
+// 定时自动保存（选做）
+// ---------------------------------------------------------------------------
+
+namespace {
+// 多久自动存一次：30 秒足够应付「写了半天忘了按 Ctrl+S」的情况，又不至于频繁写盘
+const int kAutoSaveIntervalMs = 30 * 1000;
+}
+
+void MainWindow::initAutoSave()
+{
+    m_autoSaveTimer = new QTimer(this);
+    m_autoSaveTimer->setInterval(kAutoSaveIntervalMs);
+    connect(m_autoSaveTimer, &QTimer::timeout, this, &MainWindow::autoSave);
+    m_autoSaveTimer->start();
+}
+
+// 到点了看一眼：只有「已经有文件路径」且「确实改过」才写盘，
+// 新建还没保存过的文档不碰 —— 否则就得弹「另存为」对话框，反而打断打字。
+void MainWindow::autoSave()
+{
+    if (m_filePath.isEmpty())
+        return;
+
+    if (!ui->textEdit->document()->isModified())
+        return;
+
+    writeFile(m_filePath, true);
 }
 
 // ---------------------------------------------------------------------------

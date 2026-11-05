@@ -13,6 +13,7 @@ QT_END_NAMESPACE
 class QCloseEvent;
 class QColor;
 class QTextCursor;
+class QTimer;
 class FindDialog;
 class ReplaceDialog;
 
@@ -52,6 +53,9 @@ private slots:
     void on_actionStatusBar_toggled(bool checked);  // 显示/隐藏状态栏
     void updateStatusInfo();                        // 刷新状态栏的 length / lines / Ln / Col
 
+    // 定时自动保存：每隔一段时间检查一次，有未保存的修改就静默存盘
+    void autoSave();
+
     // 查找
     // 查找对话框点「查找下一个」时发来：查找词、是否区分大小写、是否向上
     void findNext(const QString &text, bool caseSensitive, bool backward);
@@ -75,9 +79,10 @@ private:
     bool maybeSave();                               // 有未保存修改时询问「保存 / 不保存 / 取消」
     bool saveFile();                                // 保存到当前文件；还没有路径时转为另存为
     bool saveFileAs();                              // 选择路径后保存
-    bool writeFile(const QString &path);            // 真正写盘
+    bool writeFile(const QString &path, bool autoSaved = false);   // 真正写盘
     bool loadFile(const QString &path);             // 读盘并显示到编辑区
     void setCurrentFile(const QString &path);       // 更新当前文件路径与标题
+    void initAutoSave();                            // 起一个定时器，按时自动存盘
     // 查找的核心：从光标处找下一个匹配，找不到就绕回另一头再找；
     // 返回空光标表示两头都没有，wrapped 告诉调用方有没有绕过回
     QTextCursor findMatch(const QString &text, bool caseSensitive, bool backward,
@@ -92,6 +97,8 @@ private:
 
     QString m_filePath;   // 当前文件的完整路径，空表示还没保存过
     QString m_lastDir;    // 上一次打开/保存所在的目录
+
+    QTimer *m_autoSaveTimer = nullptr;   // 定时自动保存（选做）
 };
 
 #endif // MAINWINDOW_H
