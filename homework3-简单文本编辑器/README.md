@@ -225,6 +225,23 @@
 - 验证方式：重新 `cmake --build` 通过，再跑一遍上一批的自动化自测（行号显示/隐藏、自动保存 11 项）
   结果与清理前逐条一致，说明只动了注释、没动逻辑。
 
+### 第十三次提交：界面配色统一，去掉名称里的「小牛」
+
+原本行号栏写死成窄黄底（`#FDF6E3`）加更黄的当前行（`#F6E2B4`），在系统深色主题下
+和深灰的编辑区撞得很厉害，看着突兀。改为全部从当前调色板推导，跟着主题走：
+
+| 用途 | 取值方式 |
+| --- | --- |
+| 行号栏底色 | `QPalette::Base` 与 `QPalette::Text` 按 4% 混合 |
+| 当前行底色 | `QPalette::Base` 与 `QPalette::Highlight` 按 16% 混合 |
+| 行号文字 | `QPalette::Text`，透明度 140（当前行 230） |
+| 行号栏右侧分隔线 | `QPalette::Base` 与 `QPalette::Text` 按 12% 混合 |
+
+这样浅色主题下是浅灰栏 + 淡蓝当前行，深色主题下是略亮的深灰栏 + 深蓝当前行，
+两种主题都与编辑区自然衔接；用户在「格式 → 编辑器背景色」里换底色时，行号栏也会跟着变。
+
+另外把关于对话框的标题从「小牛文本编辑器」改成「文本编辑器」。
+
 
 ## 二、目录结构
 
@@ -257,8 +274,8 @@ QT2/
 
 ```powershell
 $env:PATH = "E:\Qt\Tools\mingw1310_64\bin;E:\Qt\6.11.2\mingw_64\bin;" + $env:PATH
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=E:/Qt/6.11.2/mingw_64
-cmake --build build
+cmake -S . -B build-cli -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=E:/Qt/6.11.2/mingw_64
+cmake --build build-cli
 ```
 
 ### Qt Creator

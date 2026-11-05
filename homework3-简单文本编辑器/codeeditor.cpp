@@ -5,6 +5,17 @@
 #include <QResizeEvent>
 #include <QTextBlock>
 
+namespace {
+
+QColor blend(const QColor &from, const QColor &to, qreal ratio)
+{
+    return QColor::fromRgbF(from.redF() * (1.0 - ratio) + to.redF() * ratio,
+                            from.greenF() * (1.0 - ratio) + to.greenF() * ratio,
+                            from.blueF() * (1.0 - ratio) + to.blueF() * ratio);
+}
+
+}
+
 CodeEditor::CodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
     , m_lineNumberArea(new LineNumberArea(this))
@@ -100,10 +111,25 @@ void CodeEditor::resizeEvent(QResizeEvent *event)
 
 void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event)
 {
+    const QPalette pal = palette();
+    const QColor baseColor = pal.color(QPalette::Base);
+    const QColor textColor = pal.color(QPalette::Text);
+    const QColor highlightColor = pal.color(QPalette::Highlight);
+
+    const QColor gutterColor = blend(baseColor, textColor, 0.04);
+    const QColor currentColor = blend(baseColor, highlightColor, 0.16);
+    const QColor borderColor = blend(baseColor, textColor, 0.12);
+
+    QColor numberColor = textColor;
+    numberColor.setAlpha(140);
+    QColor currentNumberColor = textColor;
+    currentNumberColor.setAlpha(230);
+
     QPainter painter(m_lineNumberArea);
-    painter.fillRect(event->rect(), QColor(0xFD, 0xF6, 0xE3));
+    painter.fillRect(event->rect(), gutterColor);
 
     const int currentLine = textCursor().blockNumber();
+    const int width = m_lineNumberArea->width();
 
     QTextBlock block = firstVisibleBlock();
     int blockNumber = block.blockNumber();
@@ -113,15 +139,13 @@ void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event)
     while (block.isValid() && top <= event->rect().bottom()) {
         if (block.isVisible() && bottom >= event->rect().top()) {
             const bool isCurrent = (blockNumber == currentLine);
+            const int height = qRound(blockBoundingRect(block).height());
 
-            if (isCurrent) {
-                painter.fillRect(QRect(0, top, m_lineNumberArea->width(),
-                                       qRound(blockBoundingRect(block).height())),
-                                 QColor(0xF6, 0xE2, 0xB4));
-            }
+            if (isCurrent)
+                painter.fillRect(QRect(0, top, width, height), currentColor);
 
-            painter.setPen(isCurrent ? QColor(0x20, 0x20, 0x20) : QColor(0x60, 0x60, 0x60));
-            painter.drawText(0, top, m_lineNumberArea->width() - 6, fontMetrics().height(),
+            painter.setPen(isCurrent ? currentNumberColor : numberColor);
+            painter.drawText(0, top, width - 6, fontMetrics().height(),
                              Qt::AlignRight, QString::number(blockNumber + 1));
         }
 
@@ -130,4 +154,7 @@ void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event)
         bottom = top + qRound(blockBoundingRect(block).height());
         ++blockNumber;
     }
+
+    painter.setPen(borderColor);
+    painter.drawLine(width - 1, event->rect().top(), width - 1, event->rect().bottom());
 }
