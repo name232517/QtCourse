@@ -44,6 +44,11 @@ QLabel#muted, QLabel#patientCount {
     font-size: 13px;
 }
 
+QLabel#loginFeedback {
+    color: #8b3439;
+    font-size: 13px;
+}
+
 QPushButton {
     color: #293b40;
     background: #ffffff;

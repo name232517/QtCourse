@@ -1,11 +1,14 @@
 #pragma once
 
+#include <QByteArray>
 #include <QSqlDatabase>
 #include <QString>
 
 class Database final
 {
 public:
+    enum class CredentialLookup { Found, UnknownUser, Error };
+
     Database();
     ~Database();
 
@@ -14,6 +17,7 @@ public:
 
     bool open(const QString &filePath, QString &error);
     bool addDemoData(QString &error);
+    CredentialLookup passwordDigestForUser(const QString &username, QByteArray &digest) const;
 
     // Destroy queries and models that use this connection before destroying Database.
     QSqlDatabase connection() const;

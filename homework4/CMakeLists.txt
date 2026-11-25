@@ -5,11 +5,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Qt6 6.7.3 REQUIRED COMPONENTS Core Sql Network Widgets)
+find_package(Qt6 6.7.3 REQUIRED COMPONENTS Core Sql Network Widgets Concurrent)
 
 qt_add_library(QT3Database STATIC
     database.cpp
     database.h
+    passworddigest.cpp
+    passworddigest.h
 )
 
 qt_add_resources(QT3Database database_schema
@@ -43,5 +45,5 @@ qt_add_resources(QT3Ui preview_theme
         preview/down-arrow.png
 )
 
-target_link_libraries(QT3Ui PRIVATE Qt6::Widgets QT3Database)
+target_link_libraries(QT3Ui PRIVATE Qt6::Widgets Qt6::Concurrent QT3Database)
 target_compile_options(QT3Ui PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)

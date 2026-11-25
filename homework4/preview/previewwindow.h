@@ -1,9 +1,12 @@
 #pragma once
 
 #include "navigationcontroller.h"
+#include "passworddigest.h"
 
+#include <QFutureWatcher>
 #include <QWidget>
 
+class Database;
 class PatientTableModel;
 class QComboBox;
 class QDateEdit;
@@ -19,7 +22,7 @@ class QTableView;
 class PreviewWindow final : public QWidget
 {
 public:
-    explicit PreviewWindow(PatientTableModel &patientData, QWidget *parent = nullptr);
+    PreviewWindow(const Database &database, PatientTableModel &patientData, QWidget *parent = nullptr);
 
 private:
     QWidget *createLoginPage();
@@ -27,6 +30,8 @@ private:
     QWidget *createHomePage();
     QWidget *createPatientPage(PatientTableModel &patientData);
     QWidget *createEditorPage();
+    void attemptLogin();
+    void finishLogin(PasswordDigest::Check result);
     void applyPage(NavigationController::Page previous, NavigationController::Page current);
     void clearWorkspace();
     void filterPatients();
@@ -34,7 +39,9 @@ private:
     void showEditor(const QModelIndex &patient);
     void populateEditor(const QModelIndex &patient);
 
+    const Database &database_;
     NavigationController navigation_;
+    QFutureWatcher<PasswordDigest::Check> loginCheck_;
     QStackedWidget *root_ = nullptr;
     QWidget *loginPage_ = nullptr;
     QWidget *workspace_ = nullptr;
@@ -47,6 +54,8 @@ private:
 
     QLineEdit *username_ = nullptr;
     QLineEdit *password_ = nullptr;
+    QPushButton *signIn_ = nullptr;
+    QLabel *loginFeedback_ = nullptr;
     QLineEdit *search_ = nullptr;
     QTableView *patientTable_ = nullptr;
     QSortFilterProxyModel *patients_ = nullptr;

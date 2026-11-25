@@ -1,5 +1,6 @@
 #include "previewwindow.h"
 
+#include "database.h"
 #include "patienttablemodel.h"
 
 #include <QAbstractItemView>
@@ -22,6 +23,7 @@
 #include <QSortFilterProxyModel>
 #include <QStackedWidget>
 #include <QTableView>
+#include <QtConcurrentRun>
 #include <QVBoxLayout>
 
 using Page = NavigationController::Page;
@@ -145,8 +147,8 @@ void configureMeasure(QDoubleSpinBox *field, qreal maximum)
 }
 }
 
-PreviewWindow::PreviewWindow(PatientTableModel &patientData, QWidget *parent)
-    : QWidget(parent)
+PreviewWindow::PreviewWindow(const Database &database, PatientTableModel &patientData, QWidget *parent)
+    : QWidget(parent), database_(database)
 {
     setWindowTitle(QStringLiteral("诊疗工作台"));
     setWindowIcon(interfaceIcon(Icon::Clinic));
@@ -190,7 +192,7 @@ QWidget *PreviewWindow::createLoginPage()
 
     username_ = new QLineEdit;
     username_->setObjectName(QStringLiteral("username"));
-    username_->setMaxLength(32);
+    username_->setMaxLength(64);
     password_ = new QLineEdit;
     password_->setObjectName(QStringLiteral("password"));
     password_->setEchoMode(QLineEdit::Password);
@@ -203,14 +205,22 @@ QWidget *PreviewWindow::createLoginPage()
     form->addLayout(fields);
     form->addSpacing(18);
 
-    auto *signIn = button(QStringLiteral("进入预览"), "primary");
-    signIn->setObjectName(QStringLiteral("signIn"));
-    form->addWidget(signIn);
+    signIn_ = button(QStringLiteral("登录"), "primary");
+    signIn_->setObjectName(QStringLiteral("signIn"));
+    form->addWidget(signIn_);
     form->addSpacing(10);
-    form->addWidget(label(QStringLiteral("预览模式无需验证账号。"), "muted"));
-    connect(signIn, &QPushButton::clicked, &navigation_, &NavigationController::enterWorkspace);
+    loginFeedback_ = label({}, "loginFeedback");
+    loginFeedback_->setMinimumHeight(20);
+    loginFeedback_->setWordWrap(true);
+    form->addWidget(loginFeedback_);
+    connect(signIn_, &QPushButton::clicked, this, &PreviewWindow::attemptLogin);
     connect(username_, &QLineEdit::returnPressed, password_, [this] { password_->setFocus(); });
-    connect(password_, &QLineEdit::returnPressed, signIn, &QPushButton::click);
+    connect(password_, &QLineEdit::returnPressed, this, &PreviewWindow::attemptLogin);
+    connect(username_, &QLineEdit::textEdited, loginFeedback_, &QLabel::clear);
+    connect(password_, &QLineEdit::textEdited, loginFeedback_, &QLabel::clear);
+    connect(&loginCheck_, &QFutureWatcher<PasswordDigest::Check>::finished, this, [this] {
+        finishLogin(loginCheck_.result());
+    });
     return page;
 }
 
@@ -243,10 +253,8 @@ QWidget *PreviewWindow::createWorkspace(PatientTableModel &patientData)
         bar->addWidget(action);
     }
     bar->addStretch();
-    bar->addWidget(label(QStringLiteral("预览模式"), "muted"));
-    bar->addSpacing(10);
-    auto *exit = button(QStringLiteral("返回登录"), "quiet");
-    exit->setObjectName(QStringLiteral("exitPreview"));
+    auto *exit = button(QStringLiteral("退出登录"), "quiet");
+    exit->setObjectName(QStringLiteral("signOut"));
     bar->addWidget(exit);
 
     pages_ = new QStackedWidget;
@@ -537,6 +545,63 @@ QWidget *PreviewWindow::createEditorPage()
     return page;
 }
 
+void PreviewWindow::attemptLogin()
+{
+    if (navigation_.currentPage() != Page::Login || !signIn_->isEnabled()) {
+        return;
+    }
+
+    const QString username = username_->text().trimmed();
+    if (username.isEmpty()) {
+        loginFeedback_->setText(QStringLiteral("请输入用户名。"));
+        username_->setFocus();
+        return;
+    }
+    if (password_->text().isEmpty()) {
+        loginFeedback_->setText(QStringLiteral("请输入密码。"));
+        password_->setFocus();
+        return;
+    }
+
+    QByteArray digest;
+    const auto credential = database_.passwordDigestForUser(username, digest);
+    if (credential != Database::CredentialLookup::Found) {
+        finishLogin(credential == Database::CredentialLookup::UnknownUser
+            ? PasswordDigest::Check::Mismatch : PasswordDigest::Check::Unavailable);
+        return;
+    }
+
+    const QByteArray password = password_->text().toUtf8();
+    password_->clear();
+    loginFeedback_->clear();
+    username_->setEnabled(false);
+    password_->setEnabled(false);
+    signIn_->setEnabled(false);
+    signIn_->setText(QStringLiteral("正在验证…"));
+    // The SQLite connection stays on the UI thread. Only the digest calculation goes to the pool.
+    loginCheck_.setFuture(QtConcurrent::run(PasswordDigest::verify, password, digest));
+}
+
+void PreviewWindow::finishLogin(PasswordDigest::Check result)
+{
+    username_->setEnabled(true);
+    password_->setEnabled(true);
+    signIn_->setEnabled(true);
+    signIn_->setText(QStringLiteral("登录"));
+    password_->clear();
+
+    if (result == PasswordDigest::Check::Match) {
+        loginFeedback_->clear();
+        navigation_.enterWorkspace();
+        return;
+    }
+
+    loginFeedback_->setText(result == PasswordDigest::Check::Mismatch
+        ? QStringLiteral("用户名或密码错误。")
+        : QStringLiteral("无法验证账号数据，请检查数据库。"));
+    password_->setFocus();
+}
+
 void PreviewWindow::applyPage(Page previous, Page current)
 {
     QWidget *focus = nullptr;
@@ -572,6 +637,7 @@ void PreviewWindow::clearWorkspace()
 {
     username_->clear();
     password_->clear();
+    loginFeedback_->clear();
     search_->clear();
     patientTable_->selectionModel()->clear();
     patientTable_->scrollToTop();

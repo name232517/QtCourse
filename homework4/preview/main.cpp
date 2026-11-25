@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
         return reportDatabaseError(QStringLiteral("数据库读取失败"), error);
     }
 
-    PreviewWindow window(patients);
+    PreviewWindow window(database, patients);
     window.show();
     return app.exec();
 }

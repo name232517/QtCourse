@@ -1,8 +1,7 @@
 #include "database.h"
+#include "passworddigest.h"
 
 #include <QFile>
-#include <QPasswordDigestor>
-#include <QRandomGenerator>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QUuid>
@@ -10,7 +9,6 @@
 
 namespace {
 constexpr int SchemaVersion = 1;
-constexpr int DemoPasswordIterations = 600000;
 }
 
 Database::Database()
@@ -122,22 +120,11 @@ bool Database::addDemoData(QString &error)
         return false;
     }
 
-    // Use an independent random salt each time a demo password is generated.
-    QByteArray salt(16, Qt::Uninitialized);
-    for (char &byte : salt) {
-        byte = static_cast<char>(QRandomGenerator::system()->bounded(256u));
-    }
-    const QByteArray digest = QPasswordDigestor::deriveKeyPbkdf2(
-        QCryptographicHash::Sha256, QByteArrayLiteral("123456"), salt, DemoPasswordIterations, 32);
+    const QByteArray digest = PasswordDigest::create(QByteArrayLiteral("123456"));
     if (digest.isEmpty()) {
         error = QStringLiteral("无法生成演示账号的密码摘要。");
         return false;
     }
-    const QString password = QStringLiteral("pbkdf2-sha256$%1$%2$%3")
-                                 .arg(DemoPasswordIterations)
-                                 .arg(QString::fromLatin1(salt.toHex()),
-                                      QString::fromLatin1(digest.toHex()));
-
     if (!db_.transaction()) {
         error = QStringLiteral("无法开始演示数据事务。%1").arg(db_.lastError().text());
         return false;
@@ -152,7 +139,7 @@ bool Database::addDemoData(QString &error)
         return false;
     }
 
-    query.addBindValue(password);
+    query.addBindValue(QString::fromLatin1(digest));
     if (!query.exec() || !query.exec(QStringLiteral(
             "INSERT INTO Patient (ID, ID_CARD, NAME, SEX, DOB, HEIGHT, WEIGHT, MOBILEPHONE) VALUES "
             "('demo-001', '000000200001010001', '林晓晨', 1, '2000-01-01', 172.5, 66.0, NULL), "
@@ -170,6 +157,29 @@ bool Database::addDemoData(QString &error)
         return false;
     }
     return true;
+}
+
+Database::CredentialLookup Database::passwordDigestForUser(const QString &username, QByteArray &digest) const
+{
+    digest.clear();
+    if (!db_.isOpen()) {
+        return CredentialLookup::Error;
+    }
+
+    QSqlQuery query(db_);
+    if (!query.prepare(QStringLiteral("SELECT PASSWORD FROM \"User\" WHERE USERNAME = :username"))) {
+        return CredentialLookup::Error;
+    }
+    query.bindValue(QStringLiteral(":username"), username);
+    if (!query.exec()) {
+        return CredentialLookup::Error;
+    }
+    if (!query.next()) {
+        return query.lastError().isValid() ? CredentialLookup::Error : CredentialLookup::UnknownUser;
+    }
+
+    digest = query.value(0).toByteArray();
+    return CredentialLookup::Found;
 }
 
 QSqlDatabase Database::connection() const
