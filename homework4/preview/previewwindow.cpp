@@ -16,11 +16,14 @@
 #include <QPainterPath>
 #include <QPixmap>
 #include <QPushButton>
+#include <QShortcut>
 #include <QSortFilterProxyModel>
 #include <QStackedWidget>
 #include <QStandardItemModel>
 #include <QTableView>
 #include <QVBoxLayout>
+
+using Page = NavigationController::Page;
 
 namespace {
 enum PatientColumn { Id, Name, Sex, BirthDate, IdentityCard, Mobile, ColumnCount };
@@ -159,6 +162,8 @@ PreviewWindow::PreviewWindow(QWidget *parent)
     root_->addWidget(loginPage_);
     root_->addWidget(workspace_);
     layout->addWidget(root_);
+    connect(&navigation_, &NavigationController::pageChanged, this, &PreviewWindow::applyPage);
+    username_->setFocus();
 }
 
 QWidget *PreviewWindow::createLoginPage()
@@ -184,9 +189,9 @@ QWidget *PreviewWindow::createLoginPage()
     form->addWidget(label(QStringLiteral("登录"), "pageTitle"));
     form->addSpacing(17);
 
-    auto *username = new QLineEdit;
-    username->setObjectName(QStringLiteral("username"));
-    username->setMaxLength(32);
+    username_ = new QLineEdit;
+    username_->setObjectName(QStringLiteral("username"));
+    username_->setMaxLength(32);
     password_ = new QLineEdit;
     password_->setObjectName(QStringLiteral("password"));
     password_->setEchoMode(QLineEdit::Password);
@@ -194,7 +199,7 @@ QWidget *PreviewWindow::createLoginPage()
     auto *fields = new QGridLayout;
     fields->setContentsMargins(0, 0, 0, 0);
     fields->setVerticalSpacing(13);
-    addField(fields, 0, 0, QStringLiteral("用户名"), username);
+    addField(fields, 0, 0, QStringLiteral("用户名"), username_);
     addField(fields, 1, 0, QStringLiteral("密码"), password_);
     form->addLayout(fields);
     form->addSpacing(18);
@@ -204,8 +209,8 @@ QWidget *PreviewWindow::createLoginPage()
     form->addWidget(signIn);
     form->addSpacing(10);
     form->addWidget(label(QStringLiteral("预览模式无需验证账号。"), "muted"));
-    connect(signIn, &QPushButton::clicked, this, [this] { showWorkspacePage(homePage_); });
-    connect(username, &QLineEdit::returnPressed, password_, [this] { password_->setFocus(); });
+    connect(signIn, &QPushButton::clicked, &navigation_, &NavigationController::enterWorkspace);
+    connect(username_, &QLineEdit::returnPressed, password_, [this] { password_->setFocus(); });
     connect(password_, &QLineEdit::returnPressed, signIn, &QPushButton::click);
     return page;
 }
@@ -234,6 +239,7 @@ QWidget *PreviewWindow::createWorkspace()
     patientNav_->setIcon(interfaceIcon(Icon::Patients));
     for (auto *action : {homeNav_, patientNav_}) {
         action->setCheckable(true);
+        action->setAutoExclusive(true);
         action->setIconSize(QSize(16, 16));
         bar->addWidget(action);
     }
@@ -254,12 +260,17 @@ QWidget *PreviewWindow::createWorkspace()
     layout->addWidget(appBar);
     layout->addWidget(pages_, 1);
 
-    connect(homeNav_, &QPushButton::clicked, this, [this] { showWorkspacePage(homePage_); });
-    connect(patientNav_, &QPushButton::clicked, this, [this] { showWorkspacePage(patientPage_); });
-    connect(exit, &QPushButton::clicked, this, [this] {
-        password_->clear();
-        root_->setCurrentWidget(loginPage_);
+    connect(homeNav_, &QPushButton::clicked, &navigation_, [this] {
+        navigation_.selectWorkspacePage(Page::Workbench);
     });
+    connect(patientNav_, &QPushButton::clicked, &navigation_, [this] {
+        navigation_.selectWorkspacePage(Page::Patients);
+    });
+    connect(exit, &QPushButton::clicked, &navigation_, &NavigationController::returnToLogin);
+
+    auto *backShortcut = new QShortcut(QKeySequence::Back, page);
+    backShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(backShortcut, &QShortcut::activated, &navigation_, &NavigationController::goBack);
     return page;
 }
 
@@ -295,7 +306,9 @@ QWidget *PreviewWindow::createHomePage()
     }
     layout->addWidget(modules);
     layout->addStretch();
-    connect(open, &QPushButton::clicked, this, [this] { showWorkspacePage(patientPage_); });
+    connect(open, &QPushButton::clicked, &navigation_, [this] {
+        navigation_.selectWorkspacePage(Page::Patients);
+    });
     return page;
 }
 
@@ -467,6 +480,7 @@ QWidget *PreviewWindow::createEditorPage()
     editorTitle_ = label({}, "pageTitle");
     top->addWidget(editorTitle_, 1);
     auto *back = button(QStringLiteral("返回列表"), "quiet");
+    back->setObjectName(QStringLiteral("backToPatients"));
     top->addWidget(back, 0, Qt::AlignVCenter);
     layout->addLayout(top);
 
@@ -539,25 +553,53 @@ QWidget *PreviewWindow::createEditorPage()
     actions->addWidget(save);
     layout->addLayout(actions);
     layout->addStretch();
-    connect(back, &QPushButton::clicked, this, [this] { showWorkspacePage(patientPage_); });
-    connect(cancel, &QPushButton::clicked, back, &QPushButton::click);
+    connect(back, &QPushButton::clicked, &navigation_, &NavigationController::goBack);
+    connect(cancel, &QPushButton::clicked, &navigation_, &NavigationController::goBack);
     connect(save, &QPushButton::clicked, this, [this] {
         editorNotice_->setText(QStringLiteral("未保存。预览模式下无法写入数据库。"));
     });
     return page;
 }
 
-void PreviewWindow::showWorkspacePage(QWidget *page)
+void PreviewWindow::applyPage(Page previous, Page current)
 {
-    root_->setCurrentWidget(workspace_);
-    pages_->setCurrentWidget(page);
-    homeNav_->setChecked(page == homePage_);
-    patientNav_->setChecked(page != homePage_);
-    if (page == homePage_) {
-        homeNav_->setFocus();
-    } else if (page == patientPage_) {
-        search_->setFocus();
+    QWidget *focus = nullptr;
+    switch (current) {
+    case Page::Login:
+        root_->setCurrentWidget(loginPage_);
+        clearWorkspace();
+        username_->setFocus();
+        return;
+    case Page::Workbench:
+        pages_->setCurrentWidget(homePage_);
+        homeNav_->setChecked(true);
+        focus = homeNav_;
+        break;
+    case Page::Patients:
+        pages_->setCurrentWidget(patientPage_);
+        patientNav_->setChecked(true);
+        focus = previous == Page::Editor && patientTable_->selectionModel()->hasSelection()
+            ? static_cast<QWidget *>(patientTable_) : search_;
+        break;
+    case Page::Editor:
+        pages_->setCurrentWidget(editorPage_);
+        patientNav_->setChecked(true);
+        focus = patientId_->isReadOnly() ? patientName_ : patientId_;
+        break;
     }
+
+    root_->setCurrentWidget(workspace_);
+    focus->setFocus();
+}
+
+void PreviewWindow::clearWorkspace()
+{
+    username_->clear();
+    password_->clear();
+    search_->clear();
+    patientTable_->selectionModel()->clear();
+    patientTable_->scrollToTop();
+    populateEditor(QModelIndex());
 }
 
 void PreviewWindow::filterPatients()
@@ -579,6 +621,16 @@ void PreviewWindow::updatePatientActions()
 
 void PreviewWindow::showEditor(const QModelIndex &patient)
 {
+    if (navigation_.currentPage() != Page::Patients) {
+        return;
+    }
+
+    populateEditor(patient);
+    navigation_.selectWorkspacePage(Page::Editor);
+}
+
+void PreviewWindow::populateEditor(const QModelIndex &patient)
+{
     const auto value = [&patient](int column) {
         return patient.siblingAtColumn(column).data().toString();
     };
@@ -595,6 +647,4 @@ void PreviewWindow::showEditor(const QModelIndex &patient)
     mobile_->setText(value(Mobile) == QStringLiteral("—") ? QString() : value(Mobile));
     height_->setValue(patient.siblingAtColumn(Id).data(HeightRole).toDouble());
     weight_->setValue(patient.siblingAtColumn(Id).data(WeightRole).toDouble());
-    showWorkspacePage(editorPage_);
-    (editing ? patientName_ : patientId_)->setFocus();
 }

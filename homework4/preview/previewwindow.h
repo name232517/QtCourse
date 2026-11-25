@@ -1,5 +1,7 @@
 #pragma once
 
+#include "navigationcontroller.h"
+
 #include <QWidget>
 
 class QComboBox;
@@ -24,11 +26,14 @@ private:
     QWidget *createHomePage();
     QWidget *createPatientPage();
     QWidget *createEditorPage();
-    void showWorkspacePage(QWidget *page);
+    void applyPage(NavigationController::Page previous, NavigationController::Page current);
+    void clearWorkspace();
     void filterPatients();
     void updatePatientActions();
     void showEditor(const QModelIndex &patient);
+    void populateEditor(const QModelIndex &patient);
 
+    NavigationController navigation_;
     QStackedWidget *root_ = nullptr;
     QWidget *loginPage_ = nullptr;
     QWidget *workspace_ = nullptr;
@@ -39,6 +44,7 @@ private:
     QPushButton *homeNav_ = nullptr;
     QPushButton *patientNav_ = nullptr;
 
+    QLineEdit *username_ = nullptr;
     QLineEdit *password_ = nullptr;
     QLineEdit *search_ = nullptr;
     QTableView *patientTable_ = nullptr;

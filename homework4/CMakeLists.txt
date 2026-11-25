@@ -23,9 +23,12 @@ target_compile_options(QT3 PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 
 qt_add_executable(QT3Ui WIN32 MACOSX_BUNDLE
     preview/main.cpp
+    preview/navigationcontroller.cpp
+    preview/navigationcontroller.h
     preview/previewwindow.cpp
     preview/previewwindow.h
 )
+set_target_properties(QT3Ui PROPERTIES AUTOMOC ON)
 
 qt_add_resources(QT3Ui preview_theme
     PREFIX "/"
