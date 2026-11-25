@@ -1,26 +1,38 @@
 #include "patienttablemodel.h"
 
 #include <QSqlError>
+#include <QSqlQuery>
 #include <QStringList>
 #include <QVariant>
+
+#include <utility>
 
 bool PatientTableModel::load(const QSqlDatabase &database, QString &error)
 {
     error.clear();
     if (!database.isOpen()) {
+        clear();
         error = QStringLiteral("请先打开数据库。");
         return false;
     }
 
-    setQuery(QStringLiteral(
+    QSqlQuery query(database);
+    if (!query.exec(QStringLiteral(
         "SELECT ID, NAME, SEX, DOB, ID_CARD, MOBILEPHONE, HEIGHT, WEIGHT "
-        "FROM Patient ORDER BY ID"), database);
+        "FROM Patient ORDER BY ID"))) {
+        clear();
+        error = QStringLiteral("无法读取患者记录。%1").arg(query.lastError().text());
+        return false;
+    }
+
+    setQuery(std::move(query));
     // Fetch every batch so the local filter and record count cover the full result.
     while (!lastError().isValid() && canFetchMore()) {
         fetchMore();
     }
     if (lastError().isValid()) {
         error = QStringLiteral("无法读取患者记录。%1").arg(lastError().text());
+        clear();
         return false;
     }
 

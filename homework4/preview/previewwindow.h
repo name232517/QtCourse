@@ -26,20 +26,25 @@ public:
 
 private:
     QWidget *createLoginPage();
-    QWidget *createWorkspace(PatientTableModel &patientData);
+    QWidget *createWorkspace();
     QWidget *createHomePage();
-    QWidget *createPatientPage(PatientTableModel &patientData);
+    QWidget *createPatientPage();
     QWidget *createEditorPage();
     void attemptLogin();
     void finishLogin(PasswordDigest::Check result);
     void applyPage(NavigationController::Page previous, NavigationController::Page current);
     void clearWorkspace();
     void filterPatients();
+    void reloadPatients();
+    void updatePatientResults(const QString &error = {});
+    void configurePatientColumns();
+    void deleteSelectedPatient();
     void updatePatientActions();
     void showEditor(const QModelIndex &patient);
     void populateEditor(const QModelIndex &patient);
 
     const Database &database_;
+    PatientTableModel &patientData_;
     NavigationController navigation_;
     QFutureWatcher<PasswordDigest::Check> loginCheck_;
     QStackedWidget *root_ = nullptr;
@@ -61,11 +66,13 @@ private:
     QSortFilterProxyModel *patients_ = nullptr;
     QStackedWidget *patientResults_ = nullptr;
     QLabel *patientCount_ = nullptr;
+    QLabel *patientNotice_ = nullptr;
     QLabel *emptyTitle_ = nullptr;
     QLabel *emptyDescription_ = nullptr;
     QPushButton *clearSearch_ = nullptr;
     QPushButton *editAction_ = nullptr;
     QPushButton *deleteAction_ = nullptr;
+    bool patientLoadFailed_ = false;
 
     QLabel *editorTitle_ = nullptr;
     QLabel *editorNotice_ = nullptr;

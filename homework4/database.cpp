@@ -182,6 +182,33 @@ Database::CredentialLookup Database::passwordDigestForUser(const QString &userna
     return CredentialLookup::Found;
 }
 
+Database::PatientRemoval Database::removePatient(const QString &id, QString &error) const
+{
+    error.clear();
+    if (!db_.isOpen()) {
+        error = QStringLiteral("数据库连接未打开。");
+        return PatientRemoval::Error;
+    }
+
+    QSqlQuery query(db_);
+    if (!query.prepare(QStringLiteral("DELETE FROM Patient WHERE ID = :id"))) {
+        error = query.lastError().text();
+        return PatientRemoval::Error;
+    }
+    query.bindValue(QStringLiteral(":id"), id);
+    if (!query.exec()) {
+        error = query.lastError().text();
+        return PatientRemoval::Error;
+    }
+
+    const int removed = query.numRowsAffected();
+    if (removed < 0) {
+        error = QStringLiteral("无法确认删除结果，请重新查询。");
+        return PatientRemoval::Error;
+    }
+    return removed == 0 ? PatientRemoval::Missing : PatientRemoval::Removed;
+}
+
 QSqlDatabase Database::connection() const
 {
     return db_;

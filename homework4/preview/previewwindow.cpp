@@ -3,6 +3,7 @@
 #include "database.h"
 #include "patienttablemodel.h"
 
+#include <QAbstractButton>
 #include <QAbstractItemView>
 #include <QComboBox>
 #include <QDateEdit>
@@ -20,6 +21,7 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QShortcut>
+#include <QSignalBlocker>
 #include <QSortFilterProxyModel>
 #include <QStackedWidget>
 #include <QTableView>
@@ -148,7 +150,7 @@ void configureMeasure(QDoubleSpinBox *field, qreal maximum)
 }
 
 PreviewWindow::PreviewWindow(const Database &database, PatientTableModel &patientData, QWidget *parent)
-    : QWidget(parent), database_(database)
+    : QWidget(parent), database_(database), patientData_(patientData)
 {
     setWindowTitle(QStringLiteral("诊疗工作台"));
     setWindowIcon(interfaceIcon(Icon::Clinic));
@@ -159,7 +161,7 @@ PreviewWindow::PreviewWindow(const Database &database, PatientTableModel &patien
     layout->setContentsMargins(0, 0, 0, 0);
     root_ = new QStackedWidget;
     loginPage_ = createLoginPage();
-    workspace_ = createWorkspace(patientData);
+    workspace_ = createWorkspace();
     root_->addWidget(loginPage_);
     root_->addWidget(workspace_);
     layout->addWidget(root_);
@@ -224,7 +226,7 @@ QWidget *PreviewWindow::createLoginPage()
     return page;
 }
 
-QWidget *PreviewWindow::createWorkspace(PatientTableModel &patientData)
+QWidget *PreviewWindow::createWorkspace()
 {
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("workspace"));
@@ -259,7 +261,7 @@ QWidget *PreviewWindow::createWorkspace(PatientTableModel &patientData)
 
     pages_ = new QStackedWidget;
     homePage_ = createHomePage();
-    patientPage_ = createPatientPage(patientData);
+    patientPage_ = createPatientPage();
     editorPage_ = createEditorPage();
     pages_->addWidget(homePage_);
     pages_->addWidget(patientPage_);
@@ -319,7 +321,7 @@ QWidget *PreviewWindow::createHomePage()
     return page;
 }
 
-QWidget *PreviewWindow::createPatientPage(PatientTableModel &patientData)
+QWidget *PreviewWindow::createPatientPage()
 {
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("patientPage"));
@@ -366,7 +368,7 @@ QWidget *PreviewWindow::createPatientPage(PatientTableModel &patientData)
     body->addLayout(toolbar);
 
     patients_ = new QSortFilterProxyModel(page);
-    patients_->setSourceModel(&patientData);
+    patients_->setSourceModel(&patientData_);
     patients_->setFilterCaseSensitivity(Qt::CaseInsensitive);
     patients_->setFilterKeyColumn(-1);
 
@@ -385,15 +387,7 @@ QWidget *PreviewWindow::createPatientPage(PatientTableModel &patientData)
     header->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     header->setSectionResizeMode(QHeaderView::Interactive);
     header->setMinimumSectionSize(64);
-    header->resizeSection(PatientColumn::Id, 130);
-    header->resizeSection(PatientColumn::Name, 128);
-    header->resizeSection(PatientColumn::Sex, 86);
-    header->resizeSection(PatientColumn::BirthDate, 144);
-    header->resizeSection(PatientColumn::IdentityCard, 196);
-    header->resizeSection(PatientColumn::Mobile, 132);
-    patientTable_->hideColumn(PatientColumn::Height);
-    patientTable_->hideColumn(PatientColumn::Weight);
-    header->setStretchLastSection(true);
+    configurePatientColumns();
 
     auto *empty = new QWidget;
     auto *emptyLayout = new QVBoxLayout(empty);
@@ -401,6 +395,10 @@ QWidget *PreviewWindow::createPatientPage(PatientTableModel &patientData)
     emptyLayout->addStretch();
     emptyTitle_ = label({}, "sectionTitle");
     emptyDescription_ = label({}, "muted");
+    emptyDescription_->setTextFormat(Qt::PlainText);
+    emptyDescription_->setWordWrap(true);
+    emptyDescription_->setAlignment(Qt::AlignHCenter);
+    emptyDescription_->setFixedWidth(520);
     clearSearch_ = button(QStringLiteral("查看全部"));
     clearSearch_->setObjectName(QStringLiteral("clearSearch"));
     emptyLayout->addWidget(emptyTitle_, 0, Qt::AlignHCenter);
@@ -420,7 +418,10 @@ QWidget *PreviewWindow::createPatientPage(PatientTableModel &patientData)
     patientCount_ = label({}, "muted");
     patientCount_->setObjectName(QStringLiteral("patientCount"));
     footer->addWidget(patientCount_);
-    footer->addStretch();
+    patientNotice_ = label({}, "muted");
+    patientNotice_->setObjectName(QStringLiteral("patientNotice"));
+    patientNotice_->setTextFormat(Qt::PlainText);
+    footer->addWidget(patientNotice_, 1, Qt::AlignCenter);
     footer->addWidget(label(QStringLiteral("SQLite 已连接"), "muted"));
     body->addWidget(foot);
     layout->addWidget(panel, 1);
@@ -433,7 +434,11 @@ QWidget *PreviewWindow::createPatientPage(PatientTableModel &patientData)
         }
     });
     connect(clearSearch_, &QPushButton::clicked, this, [this] {
-        search_->clear();
+        if (patientLoadFailed_) {
+            reloadPatients();
+        } else {
+            search_->clear();
+        }
         search_->setFocus();
     });
     connect(patientTable_->selectionModel(), &QItemSelectionModel::selectionChanged,
@@ -443,11 +448,8 @@ QWidget *PreviewWindow::createPatientPage(PatientTableModel &patientData)
     });
     connect(patientTable_, &QTableView::doubleClicked, this, &PreviewWindow::showEditor);
     connect(add, &QPushButton::clicked, this, [this] { showEditor(QModelIndex()); });
-    connect(deleteAction_, &QPushButton::clicked, this, [this] {
-        QMessageBox::information(this, QStringLiteral("删除患者"),
-            QStringLiteral("预览模式下无法删除患者记录。"));
-    });
-    filterPatients();
+    connect(deleteAction_, &QPushButton::clicked, this, &PreviewWindow::deleteSelectedPatient);
+    updatePatientResults();
     return page;
 }
 
@@ -617,6 +619,10 @@ void PreviewWindow::applyPage(Page previous, Page current)
         focus = homeNav_;
         break;
     case Page::Patients:
+        if (previous == Page::Workbench) {
+            patientNotice_->clear();
+            reloadPatients();
+        }
         pages_->setCurrentWidget(patientPage_);
         patientNav_->setChecked(true);
         focus = previous == Page::Editor && patientTable_->selectionModel()->hasSelection()
@@ -638,7 +644,12 @@ void PreviewWindow::clearWorkspace()
     username_->clear();
     password_->clear();
     loginFeedback_->clear();
-    search_->clear();
+    {
+        const QSignalBlocker blocker(search_);
+        search_->clear();
+    }
+    patients_->setFilterFixedString({});
+    patientNotice_->clear();
     patientTable_->selectionModel()->clear();
     patientTable_->scrollToTop();
     populateEditor(QModelIndex());
@@ -646,27 +657,107 @@ void PreviewWindow::clearWorkspace()
 
 void PreviewWindow::filterPatients()
 {
-    patientTable_->clearSelection();
-    const QString keyword = search_->text().trimmed();
-    patients_->setFilterFixedString(keyword);
+    patientNotice_->clear();
+    patients_->setFilterFixedString(search_->text().trimmed());
+    reloadPatients();
+}
+
+void PreviewWindow::reloadPatients()
+{
+    patientTable_->selectionModel()->clear();
+    const bool restoreColumns = patients_->columnCount() == 0;
+    QString error;
+    if (patientData_.load(database_.connection(), error) && restoreColumns) {
+        configurePatientColumns();
+    }
+    updatePatientResults(error);
+}
+
+void PreviewWindow::updatePatientResults(const QString &error)
+{
+    patientLoadFailed_ = !error.isEmpty();
     const int count = patients_->rowCount();
-    if (count == 0) {
-        const bool filtered = !keyword.isEmpty();
+    if (patientLoadFailed_) {
+        emptyTitle_->setText(QStringLiteral("无法加载患者列表"));
+        emptyDescription_->setText(error);
+        clearSearch_->setText(QStringLiteral("重试查询"));
+        clearSearch_->show();
+    } else if (count == 0) {
+        const bool filtered = !patients_->filterRegularExpression().pattern().isEmpty();
         emptyTitle_->setText(filtered ? QStringLiteral("未找到患者") : QStringLiteral("暂无患者记录"));
         emptyDescription_->setText(filtered ? QStringLiteral("请检查关键词或查看全部患者。")
                                              : QStringLiteral("当前数据库中没有患者档案。"));
+        clearSearch_->setText(QStringLiteral("查看全部"));
         clearSearch_->setVisible(filtered);
     }
-    patientResults_->setCurrentIndex(count > 0 ? 0 : 1);
-    patientCount_->setText(QStringLiteral("%1 条患者记录").arg(count));
+    patientResults_->setCurrentIndex(!patientLoadFailed_ && count > 0 ? 0 : 1);
+    patientCount_->setText(patientLoadFailed_ ? QStringLiteral("记录数不可用")
+                                             : QStringLiteral("%1 条患者记录").arg(count));
     updatePatientActions();
+}
+
+void PreviewWindow::configurePatientColumns()
+{
+    auto *header = patientTable_->horizontalHeader();
+    header->setStretchLastSection(false);
+    header->resizeSection(PatientColumn::Id, 130);
+    header->resizeSection(PatientColumn::Name, 128);
+    header->resizeSection(PatientColumn::Sex, 86);
+    header->resizeSection(PatientColumn::BirthDate, 144);
+    header->resizeSection(PatientColumn::IdentityCard, 196);
+    header->resizeSection(PatientColumn::Mobile, 132);
+    patientTable_->hideColumn(PatientColumn::Height);
+    patientTable_->hideColumn(PatientColumn::Weight);
+    header->setStretchLastSection(true);
 }
 
 void PreviewWindow::updatePatientActions()
 {
-    const bool selected = patientTable_->selectionModel()->hasSelection();
+    const bool selected = !patientLoadFailed_ && patientTable_->selectionModel()->hasSelection();
     editAction_->setEnabled(selected);
     deleteAction_->setEnabled(selected);
+}
+
+void PreviewWindow::deleteSelectedPatient()
+{
+    const QModelIndex row = patientTable_->selectionModel()->selectedRows(PatientColumn::Id).value(0);
+    if (navigation_.currentPage() != Page::Patients || !row.isValid()) {
+        return;
+    }
+
+    const QString id = row.data(Qt::EditRole).toString();
+    const QString name = row.siblingAtColumn(PatientColumn::Name).data(Qt::DisplayRole).toString();
+    QMessageBox confirmation(QMessageBox::Warning, QStringLiteral("删除患者"), {},
+                             QMessageBox::Yes | QMessageBox::Cancel, this);
+    confirmation.setTextFormat(Qt::PlainText);
+    confirmation.setText(QStringLiteral("删除患者“%1”（病历编号 %2）？\n此操作无法撤销。").arg(name, id));
+    confirmation.button(QMessageBox::Yes)->setText(QStringLiteral("删除"));
+    confirmation.button(QMessageBox::Yes)->setProperty("role", QStringLiteral("danger"));
+    confirmation.button(QMessageBox::Cancel)->setText(QStringLiteral("取消"));
+    confirmation.setDefaultButton(QMessageBox::Cancel);
+    confirmation.setEscapeButton(QMessageBox::Cancel);
+    if (confirmation.exec() != QMessageBox::Yes) {
+        return;
+    }
+
+    patientNotice_->clear();
+    QString error;
+    const auto result = database_.removePatient(id, error);
+    if (result == Database::PatientRemoval::Error) {
+        QMessageBox failure(QMessageBox::Critical, QStringLiteral("删除患者失败"), {},
+                            QMessageBox::Close, this);
+        failure.setTextFormat(Qt::PlainText);
+        failure.setText(QStringLiteral("删除未完成。\n%1").arg(error));
+        failure.button(QMessageBox::Close)->setText(QStringLiteral("关闭"));
+        failure.exec();
+        return;
+    }
+
+    reloadPatients();
+    patientNotice_->setText(result == Database::PatientRemoval::Removed
+        ? QStringLiteral("已删除患者 %1。").arg(id)
+        : QStringLiteral("该患者记录已不存在。"));
+    search_->setFocus();
 }
 
 void PreviewWindow::showEditor(const QModelIndex &patient)
