@@ -5,10 +5,12 @@
 #include "patientrecord.h"
 
 #include <QFutureWatcher>
+#include <QStringList>
 #include <QWidget>
 
 class Database;
 class PatientTableModel;
+class QCloseEvent;
 class QComboBox;
 class QDateEdit;
 class QLabel;
@@ -23,6 +25,9 @@ class PreviewWindow final : public QWidget
 {
 public:
     PreviewWindow(const Database &database, PatientTableModel &patientData, QWidget *parent = nullptr);
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
 
 private:
     QWidget *createLoginPage();
@@ -39,9 +44,13 @@ private:
     void updatePatientResults(const QString &error = {});
     void configurePatientColumns();
     void deleteSelectedPatient();
+    void copyPatientId(const QModelIndex &patient);
     void updatePatientActions();
     void showEditor(const QModelIndex &patient);
     void populateEditor(const QModelIndex &patient);
+    QStringList editorInput() const;
+    bool confirmLeaveEditor();
+    void goBack();
     void saveEditor();
     void refreshSavedPatient(const QString &id);
 
@@ -88,4 +97,5 @@ private:
     QLineEdit *height_ = nullptr;
     QLineEdit *weight_ = nullptr;
     std::optional<PatientRecord> originalPatient_;
+    QStringList initialEditorInput_;
 };

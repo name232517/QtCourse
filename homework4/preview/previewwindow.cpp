@@ -6,6 +6,9 @@
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
+#include <QApplication>
+#include <QClipboard>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QDateEdit>
 #include <QFrame>
@@ -176,6 +179,15 @@ PreviewWindow::PreviewWindow(const Database &database, PatientTableModel &patien
     username_->setFocus();
 }
 
+void PreviewWindow::closeEvent(QCloseEvent *event)
+{
+    if (confirmLeaveEditor()) {
+        QWidget::closeEvent(event);
+    } else {
+        event->ignore();
+    }
+}
+
 QWidget *PreviewWindow::createLoginPage()
 {
     auto *page = new QWidget;
@@ -276,17 +288,28 @@ QWidget *PreviewWindow::createWorkspace()
     layout->addWidget(appBar);
     layout->addWidget(pages_, 1);
 
-    connect(homeNav_, &QPushButton::clicked, &navigation_, [this] {
-        navigation_.selectWorkspacePage(Page::Workbench);
+    connect(homeNav_, &QPushButton::clicked, this, [this] {
+        if (navigation_.currentPage() == Page::Editor) {
+            patientNav_->setChecked(true);
+        }
+        if (confirmLeaveEditor()) {
+            navigation_.selectWorkspacePage(Page::Workbench);
+        }
     });
-    connect(patientNav_, &QPushButton::clicked, &navigation_, [this] {
-        navigation_.selectWorkspacePage(Page::Patients);
+    connect(patientNav_, &QPushButton::clicked, this, [this] {
+        if (confirmLeaveEditor()) {
+            navigation_.selectWorkspacePage(Page::Patients);
+        }
     });
-    connect(exit, &QPushButton::clicked, &navigation_, &NavigationController::returnToLogin);
+    connect(exit, &QPushButton::clicked, this, [this] {
+        if (confirmLeaveEditor()) {
+            navigation_.returnToLogin();
+        }
+    });
 
     auto *backShortcut = new QShortcut(QKeySequence::Back, page);
     backShortcut->setContext(Qt::WidgetWithChildrenShortcut);
-    connect(backShortcut, &QShortcut::activated, &navigation_, &NavigationController::goBack);
+    connect(backShortcut, &QShortcut::activated, this, &PreviewWindow::goBack);
     return page;
 }
 
@@ -363,6 +386,12 @@ QWidget *PreviewWindow::createPatientPage()
     runSearch->setObjectName(QStringLiteral("runSearch"));
     runSearch->setIcon(interfaceIcon(Icon::Search));
     runSearch->setIconSize(QSize(15, 15));
+    auto *findShortcut = new QShortcut(QKeySequence::Find, page);
+    findShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(findShortcut, &QShortcut::activated, search_, [this] {
+        search_->setFocus();
+        search_->selectAll();
+    });
     editAction_ = button(QStringLiteral("修改"));
     editAction_->setObjectName(QStringLiteral("editPatient"));
     deleteAction_ = button(QStringLiteral("删除"), "danger");
@@ -386,7 +415,7 @@ QWidget *PreviewWindow::createPatientPage()
     patientTable_->setEditTriggers(QAbstractItemView::EditKeyPressed);
     patientTable_->setItemDelegateForColumn(PatientColumn::Sex, new PatientSexDelegate(patientTable_));
     patientTable_->setContextMenuPolicy(Qt::CustomContextMenu);
-    patientTable_->setToolTip(QStringLiteral("双击打开档案。右键记录可快速修改性别。"));
+    patientTable_->setToolTip(QStringLiteral("双击打开档案。右键可复制病历编号或修改性别。"));
     patientTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
     patientTable_->setSelectionMode(QAbstractItemView::SingleSelection);
     patientTable_->setAlternatingRowColors(true);
@@ -453,14 +482,26 @@ QWidget *PreviewWindow::createPatientPage()
     });
     connect(patientTable_->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &PreviewWindow::updatePatientActions);
+    auto *copyShortcut = new QShortcut(QKeySequence::Copy, patientTable_);
+    copyShortcut->setContext(Qt::WidgetShortcut);
+    connect(copyShortcut, &QShortcut::activated, this, [this] {
+        copyPatientId(patientTable_->selectionModel()->selectedRows(PatientColumn::Id).value(0));
+    });
     connect(patientTable_, &QTableView::customContextMenuRequested, this, [this](const QPoint &position) {
         const QPersistentModelIndex cell(patientTable_->indexAt(position).siblingAtColumn(PatientColumn::Sex));
         if (!cell.isValid()) {
             return;
         }
         QMenu menu(patientTable_);
+        auto *copyId = menu.addAction(QStringLiteral("复制病历编号"));
         auto *editSex = menu.addAction(QStringLiteral("修改性别"));
-        if (menu.exec(patientTable_->viewport()->mapToGlobal(position)) == editSex && cell.isValid()) {
+        const QAction *chosen = menu.exec(patientTable_->viewport()->mapToGlobal(position));
+        if (!cell.isValid()) {
+            return;
+        }
+        if (chosen == copyId) {
+            copyPatientId(cell.sibling(cell.row(), PatientColumn::Id));
+        } else if (chosen == editSex) {
             patientTable_->setCurrentIndex(cell);
             patientTable_->edit(cell);
         }
@@ -586,8 +627,8 @@ QWidget *PreviewWindow::createEditorPage()
     actions->addWidget(save);
     layout->addLayout(actions);
     layout->addStretch();
-    connect(back, &QPushButton::clicked, &navigation_, &NavigationController::goBack);
-    connect(cancel, &QPushButton::clicked, &navigation_, &NavigationController::goBack);
+    connect(back, &QPushButton::clicked, this, &PreviewWindow::goBack);
+    connect(cancel, &QPushButton::clicked, this, &PreviewWindow::goBack);
     connect(save, &QPushButton::clicked, this, &PreviewWindow::saveEditor);
     return page;
 }
@@ -722,13 +763,13 @@ void PreviewWindow::updatePatientResults(const QString &error)
 {
     patientLoadFailed_ = !error.isEmpty();
     const int count = patients_->rowCount();
+    const bool filtered = !patients_->filterRegularExpression().pattern().isEmpty();
     if (patientLoadFailed_) {
         emptyTitle_->setText(QStringLiteral("无法加载患者列表"));
         emptyDescription_->setText(error);
         clearSearch_->setText(QStringLiteral("重试查询"));
         clearSearch_->show();
     } else if (count == 0) {
-        const bool filtered = !patients_->filterRegularExpression().pattern().isEmpty();
         emptyTitle_->setText(filtered ? QStringLiteral("未找到患者") : QStringLiteral("暂无患者记录"));
         emptyDescription_->setText(filtered ? QStringLiteral("请检查关键词或查看全部患者。")
                                              : QStringLiteral("当前数据库中没有患者档案。"));
@@ -736,8 +777,9 @@ void PreviewWindow::updatePatientResults(const QString &error)
         clearSearch_->setVisible(filtered);
     }
     patientResults_->setCurrentIndex(!patientLoadFailed_ && count > 0 ? 0 : 1);
-    patientCount_->setText(patientLoadFailed_ ? QStringLiteral("记录数不可用")
-                                             : QStringLiteral("%1 条患者记录").arg(count));
+    const QString countText = filtered ? QStringLiteral("匹配 %1 条患者记录")
+                                      : QStringLiteral("%1 条患者记录");
+    patientCount_->setText(patientLoadFailed_ ? QStringLiteral("记录数不可用") : countText.arg(count));
     updatePatientActions();
 }
 
@@ -760,6 +802,15 @@ void PreviewWindow::updatePatientActions()
     const bool selected = !patientLoadFailed_ && patientTable_->selectionModel()->hasSelection();
     editAction_->setEnabled(selected);
     deleteAction_->setEnabled(selected);
+}
+
+void PreviewWindow::copyPatientId(const QModelIndex &patient)
+{
+    if (!patient.isValid()) {
+        return;
+    }
+    QApplication::clipboard()->setText(patient.data(Qt::EditRole).toString());
+    patientNotice_->setText(QStringLiteral("已复制病历编号。"));
 }
 
 void PreviewWindow::deleteSelectedPatient()
@@ -837,6 +888,36 @@ void PreviewWindow::populateEditor(const QModelIndex &patient)
     };
     height_->setText(displayMeasure(record.height));
     weight_->setText(displayMeasure(record.weight));
+    initialEditorInput_ = editorInput();
+}
+
+QStringList PreviewWindow::editorInput() const
+{
+    return {patientName_->text(), identityCard_->text(), QString::number(sex_->currentIndex()),
+            birthDate_->text(), mobile_->text(), height_->text(), weight_->text()};
+}
+
+bool PreviewWindow::confirmLeaveEditor()
+{
+    if (navigation_.currentPage() != Page::Editor || initialEditorInput_ == editorInput()) {
+        return true;
+    }
+
+    QMessageBox confirmation(QMessageBox::Question, QStringLiteral("放弃未保存的修改？"),
+                             QStringLiteral("离开后，本次填写的内容将丢失。"),
+                             QMessageBox::Discard | QMessageBox::Cancel, this);
+    confirmation.button(QMessageBox::Discard)->setText(QStringLiteral("放弃修改"));
+    confirmation.button(QMessageBox::Cancel)->setText(QStringLiteral("继续编辑"));
+    confirmation.setDefaultButton(QMessageBox::Cancel);
+    confirmation.setEscapeButton(QMessageBox::Cancel);
+    return confirmation.exec() == QMessageBox::Discard;
+}
+
+void PreviewWindow::goBack()
+{
+    if (confirmLeaveEditor()) {
+        navigation_.goBack();
+    }
 }
 
 void PreviewWindow::saveEditor()
