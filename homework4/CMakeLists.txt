@@ -10,6 +10,7 @@ find_package(Qt6 6.7.3 REQUIRED COMPONENTS Core Sql Network Widgets Concurrent)
 qt_add_library(QT3Database STATIC
     database.cpp
     database.h
+    patientrecord.h
     passworddigest.cpp
     passworddigest.h
 )
@@ -31,6 +32,8 @@ qt_add_executable(QT3Ui WIN32 MACOSX_BUNDLE
     preview/main.cpp
     preview/navigationcontroller.cpp
     preview/navigationcontroller.h
+    preview/patientsexdelegate.cpp
+    preview/patientsexdelegate.h
     preview/patienttablemodel.cpp
     preview/patienttablemodel.h
     preview/previewwindow.cpp

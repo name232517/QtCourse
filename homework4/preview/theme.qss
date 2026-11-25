@@ -10,6 +10,15 @@ QMessageBox {
     background: #ffffff;
 }
 
+QMenu {
+    background: #ffffff;
+    border: 1px solid #dce3e5;
+}
+
+QMenu::item:selected {
+    background: #e8f1ee;
+}
+
 QFrame#appBar {
     background: #ffffff;
     border-bottom: 1px solid #dce3e5;
@@ -44,7 +53,7 @@ QLabel#muted, QLabel#patientCount {
     font-size: 13px;
 }
 
-QLabel#loginFeedback {
+QLabel#loginFeedback, QLabel#editorFeedback {
     color: #8b3439;
     font-size: 13px;
 }

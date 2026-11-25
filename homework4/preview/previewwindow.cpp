@@ -1,13 +1,13 @@
 #include "previewwindow.h"
 
 #include "database.h"
+#include "patientsexdelegate.h"
 #include "patienttablemodel.h"
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
 #include <QComboBox>
 #include <QDateEdit>
-#include <QDoubleSpinBox>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHeaderView>
@@ -15,9 +15,12 @@
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPersistentModelIndex>
 #include <QPixmap>
 #include <QPushButton>
 #include <QShortcut>
@@ -140,12 +143,16 @@ void addField(QGridLayout *form, int row, int column, const QString &text, QWidg
     form->addLayout(field, row, column);
 }
 
-void configureMeasure(QDoubleSpinBox *field, qreal maximum)
+bool readMeasure(const QLineEdit *field, std::optional<double> &measure)
 {
-    field->setRange(0, maximum);
-    field->setDecimals(1);
-    field->setSpecialValueText(QStringLiteral("未填写"));
-    field->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    const QString text = field->text().trimmed();
+    if (text.isEmpty()) {
+        measure.reset();
+        return true;
+    }
+    bool parsed = false;
+    measure = text.toDouble(&parsed);
+    return parsed;
 }
 }
 
@@ -376,7 +383,10 @@ QWidget *PreviewWindow::createPatientPage()
     patientTable_->setObjectName(QStringLiteral("patientTable"));
     patientTable_->setAccessibleName(QStringLiteral("患者列表"));
     patientTable_->setModel(patients_);
-    patientTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    patientTable_->setEditTriggers(QAbstractItemView::EditKeyPressed);
+    patientTable_->setItemDelegateForColumn(PatientColumn::Sex, new PatientSexDelegate(patientTable_));
+    patientTable_->setContextMenuPolicy(Qt::CustomContextMenu);
+    patientTable_->setToolTip(QStringLiteral("双击打开档案。右键记录可快速修改性别。"));
     patientTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
     patientTable_->setSelectionMode(QAbstractItemView::SingleSelection);
     patientTable_->setAlternatingRowColors(true);
@@ -443,6 +453,28 @@ QWidget *PreviewWindow::createPatientPage()
     });
     connect(patientTable_->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &PreviewWindow::updatePatientActions);
+    connect(patientTable_, &QTableView::customContextMenuRequested, this, [this](const QPoint &position) {
+        const QPersistentModelIndex cell(patientTable_->indexAt(position).siblingAtColumn(PatientColumn::Sex));
+        if (!cell.isValid()) {
+            return;
+        }
+        QMenu menu(patientTable_);
+        auto *editSex = menu.addAction(QStringLiteral("修改性别"));
+        if (menu.exec(patientTable_->viewport()->mapToGlobal(position)) == editSex && cell.isValid()) {
+            patientTable_->setCurrentIndex(cell);
+            patientTable_->edit(cell);
+        }
+    });
+    // Reload after the delegate has closed its editor.
+    connect(&patientData_, &PatientTableModel::patientSaved,
+            this, &PreviewWindow::refreshSavedPatient, Qt::QueuedConnection);
+    connect(&patientData_, &PatientTableModel::patientSaveFailed, this, [this](const QString &error) {
+        QMessageBox dialog(QMessageBox::Warning, QStringLiteral("无法保存患者档案"), {}, QMessageBox::Close, this);
+        dialog.setTextFormat(Qt::PlainText);
+        dialog.setText(error);
+        dialog.button(QMessageBox::Close)->setText(QStringLiteral("关闭"));
+        dialog.exec();
+    }, Qt::QueuedConnection);
     connect(editAction_, &QPushButton::clicked, this, [this] {
         showEditor(patientTable_->selectionModel()->selectedRows().value(0));
     });
@@ -486,28 +518,35 @@ QWidget *PreviewWindow::createEditorPage()
 
     patientId_ = new QLineEdit;
     patientId_->setObjectName(QStringLiteral("patientId"));
-    patientId_->setMaxLength(32);
+    patientId_->setMaxLength(64);
     patientName_ = new QLineEdit;
     patientName_->setObjectName(QStringLiteral("patientName"));
-    patientName_->setMaxLength(64);
+    patientName_->setMaxLength(128);
     identityCard_ = new QLineEdit;
-    identityCard_->setMaxLength(20);
+    identityCard_->setObjectName(QStringLiteral("patientIdentityCard"));
+    identityCard_->setMaxLength(40);
     sex_ = new QComboBox;
+    sex_->setObjectName(QStringLiteral("patientSex"));
     sex_->addItem(QStringLiteral("请选择"));
-    sex_->addItem(QStringLiteral("未知"), 0);
-    sex_->addItem(QStringLiteral("男"), 1);
-    sex_->addItem(QStringLiteral("女"), 2);
+    for (int value = 0; value <= 2; ++value) {
+        sex_->addItem(PatientRecord::sexLabel(value), value);
+    }
     birthDate_ = new QDateEdit;
+    birthDate_->setObjectName(QStringLiteral("patientBirthDate"));
     birthDate_->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
     birthDate_->setCalendarPopup(true);
-    birthDate_->setDateRange(QDate(1900, 1, 1), QDate::currentDate());
+    birthDate_->setKeyboardTracking(false);
+    birthDate_->setDateRange(QDate(100, 1, 1), QDate::currentDate());
     birthDate_->setSpecialValueText(QStringLiteral("选择出生日期"));
     mobile_ = new QLineEdit;
-    mobile_->setMaxLength(20);
-    height_ = new QDoubleSpinBox;
-    configureMeasure(height_, 300);
-    weight_ = new QDoubleSpinBox;
-    configureMeasure(weight_, 1000);
+    mobile_->setObjectName(QStringLiteral("patientMobile"));
+    mobile_->setMaxLength(40);
+    height_ = new QLineEdit;
+    height_->setObjectName(QStringLiteral("patientHeight"));
+    height_->setPlaceholderText(QStringLiteral("选填"));
+    weight_ = new QLineEdit;
+    weight_->setObjectName(QStringLiteral("patientWeight"));
+    weight_->setPlaceholderText(QStringLiteral("选填"));
 
     addField(fields, 0, 0, QStringLiteral("病历编号 *"), patientId_);
     addField(fields, 0, 1, QStringLiteral("姓名 *"), patientName_);
@@ -529,21 +568,21 @@ QWidget *PreviewWindow::createEditorPage()
 
     auto *actions = new QHBoxLayout;
     actions->setSpacing(9);
-    editorNotice_ = label(QStringLiteral("预览模式下不会保存表单。"), "muted");
+    editorNotice_ = label({}, "editorFeedback");
+    editorNotice_->setTextFormat(Qt::PlainText);
+    editorNotice_->setWordWrap(true);
     actions->addWidget(editorNotice_, 1);
     auto *cancel = button(QStringLiteral("取消"));
     cancel->setObjectName(QStringLiteral("cancelEditor"));
     auto *save = button(QStringLiteral("保存"), "primary");
-    save->setObjectName(QStringLiteral("savePreview"));
+    save->setObjectName(QStringLiteral("savePatient"));
     actions->addWidget(cancel);
     actions->addWidget(save);
     layout->addLayout(actions);
     layout->addStretch();
     connect(back, &QPushButton::clicked, &navigation_, &NavigationController::goBack);
     connect(cancel, &QPushButton::clicked, &navigation_, &NavigationController::goBack);
-    connect(save, &QPushButton::clicked, this, [this] {
-        editorNotice_->setText(QStringLiteral("未保存。预览模式下无法写入数据库。"));
-    });
+    connect(save, &QPushButton::clicked, this, &PreviewWindow::saveEditor);
     return page;
 }
 
@@ -667,7 +706,7 @@ void PreviewWindow::reloadPatients()
     patientTable_->selectionModel()->clear();
     const bool restoreColumns = patients_->columnCount() == 0;
     QString error;
-    if (patientData_.load(database_.connection(), error) && restoreColumns) {
+    if (patientData_.load(error) && restoreColumns) {
         configurePatientColumns();
     }
     updatePatientResults(error);
@@ -772,20 +811,86 @@ void PreviewWindow::showEditor(const QModelIndex &patient)
 
 void PreviewWindow::populateEditor(const QModelIndex &patient)
 {
-    const auto value = [&patient](PatientColumn column) {
-        return patient.siblingAtColumn(column).data(Qt::EditRole);
-    };
-    const bool editing = patient.isValid();
+    const QModelIndex source = patients_->mapToSource(patient);
+    originalPatient_ = source.isValid() ? std::optional<PatientRecord>(patientData_.patientAt(source.row()))
+                                        : std::nullopt;
+    const bool editing = originalPatient_.has_value();
+    const PatientRecord record = originalPatient_.value_or(PatientRecord{});
     editorTitle_->setText(editing ? QStringLiteral("编辑患者") : QStringLiteral("新增患者"));
-    editorNotice_->setText(QStringLiteral("预览模式下不会保存表单。"));
-    patientId_->setText(value(PatientColumn::Id).toString());
+    editorNotice_->clear();
+    patientId_->setText(record.id);
     patientId_->setReadOnly(editing);
-    patientName_->setText(value(PatientColumn::Name).toString());
-    identityCard_->setText(value(PatientColumn::IdentityCard).toString());
-    sex_->setCurrentIndex(editing ? sex_->findData(value(PatientColumn::Sex)) : 0);
-    birthDate_->setDate(editing ? QDate::fromString(value(PatientColumn::BirthDate).toString(), Qt::ISODate)
-                                : birthDate_->minimumDate());
-    mobile_->setText(value(PatientColumn::Mobile).toString());
-    height_->setValue(value(PatientColumn::Height).toDouble());
-    weight_->setValue(value(PatientColumn::Weight).toDouble());
+    patientName_->setText(record.name);
+    identityCard_->setText(record.identityCard);
+    sex_->setCurrentIndex(editing ? sex_->findData(record.sex) : 0);
+    const QDate birthDate = QDate::fromString(record.birthDate, Qt::ISODate);
+    birthDate_->setMaximumDate(qMax(QDate::currentDate(), birthDate));
+    birthDate_->setDate(birthDate.isValid() ? birthDate : birthDate_->minimumDate());
+    mobile_->setText(record.mobile);
+    const auto displayMeasure = [](const std::optional<double> &value) {
+        return value ? QLocale::c().toString(*value, 'g', QLocale::FloatingPointShortest) : QString();
+    };
+    height_->setText(displayMeasure(record.height));
+    weight_->setText(displayMeasure(record.weight));
+}
+
+void PreviewWindow::saveEditor()
+{
+    if (navigation_.currentPage() != Page::Editor) {
+        return;
+    }
+
+    PatientRecord updated = originalPatient_.value_or(PatientRecord{});
+    const auto editedText = [](const QLineEdit *field, const QString &previous) {
+        const QString text = field->text();
+        return text == previous ? previous : text.trimmed();
+    };
+    updated.id = editedText(patientId_, updated.id);
+    updated.name = editedText(patientName_, updated.name);
+    updated.identityCard = editedText(identityCard_, updated.identityCard);
+    updated.sex = sex_->currentData().isValid() ? sex_->currentData().toInt() : -1;
+    const QDate date = birthDate_->date();
+    if (date != birthDate_->minimumDate()) {
+        updated.birthDate = date.toString(Qt::ISODate);
+    } else if (QDate::fromString(updated.birthDate, Qt::ISODate) > birthDate_->minimumDate()) {
+        updated.birthDate.clear();
+    }
+    if (mobile_->text() != updated.mobile) {
+        const QString mobile = mobile_->text().trimmed();
+        updated.mobile = mobile.isEmpty() ? QString() : mobile;
+    }
+    if (!readMeasure(height_, updated.height)) {
+        editorNotice_->setText(QStringLiteral("身高应为大于零的数字，或留空。"));
+        height_->setFocus();
+        return;
+    }
+    if (!readMeasure(weight_, updated.weight)) {
+        editorNotice_->setText(QStringLiteral("体重应为大于零的数字，或留空。"));
+        weight_->setFocus();
+        return;
+    }
+
+    QString error;
+    if (database_.savePatient(updated, originalPatient_, error) != Database::PatientSave::Saved) {
+        editorNotice_->setText(error);
+        return;
+    }
+    refreshSavedPatient(updated.id);
+    navigation_.goBack();
+}
+
+void PreviewWindow::refreshSavedPatient(const QString &id)
+{
+    reloadPatients();
+    const auto matches = patients_->match(patients_->index(0, PatientColumn::Id), Qt::EditRole,
+                                         id, 1, Qt::MatchExactly);
+    if (!matches.isEmpty()) {
+        const QModelIndex match = matches.first();
+        patientTable_->setCurrentIndex(match);
+        patientTable_->selectRow(match.row());
+        patientTable_->scrollTo(match);
+    }
+    patientNotice_->setText(matches.isEmpty() && !patientLoadFailed_
+        ? QStringLiteral("已保存患者 %1，当前筛选中未显示。").arg(id)
+        : QStringLiteral("已保存患者 %1。").arg(id));
 }

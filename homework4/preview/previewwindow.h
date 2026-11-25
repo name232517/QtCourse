@@ -2,6 +2,7 @@
 
 #include "navigationcontroller.h"
 #include "passworddigest.h"
+#include "patientrecord.h"
 
 #include <QFutureWatcher>
 #include <QWidget>
@@ -10,7 +11,6 @@ class Database;
 class PatientTableModel;
 class QComboBox;
 class QDateEdit;
-class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
 class QModelIndex;
@@ -42,6 +42,8 @@ private:
     void updatePatientActions();
     void showEditor(const QModelIndex &patient);
     void populateEditor(const QModelIndex &patient);
+    void saveEditor();
+    void refreshSavedPatient(const QString &id);
 
     const Database &database_;
     PatientTableModel &patientData_;
@@ -82,6 +84,7 @@ private:
     QComboBox *sex_ = nullptr;
     QDateEdit *birthDate_ = nullptr;
     QLineEdit *mobile_ = nullptr;
-    QDoubleSpinBox *height_ = nullptr;
-    QDoubleSpinBox *weight_ = nullptr;
+    QLineEdit *height_ = nullptr;
+    QLineEdit *weight_ = nullptr;
+    std::optional<PatientRecord> originalPatient_;
 };

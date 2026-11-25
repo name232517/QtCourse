@@ -1,5 +1,7 @@
 #pragma once
 
+#include "patientrecord.h"
+
 #include <QByteArray>
 #include <QSqlDatabase>
 #include <QString>
@@ -9,6 +11,7 @@ class Database final
 public:
     enum class CredentialLookup { Found, UnknownUser, Error };
     enum class PatientRemoval { Removed, Missing, Error };
+    enum class PatientSave { Saved, Stale, Error };
 
     Database();
     ~Database();
@@ -20,6 +23,8 @@ public:
     bool addDemoData(QString &error);
     CredentialLookup passwordDigestForUser(const QString &username, QByteArray &digest) const;
     PatientRemoval removePatient(const QString &id, QString &error) const;
+    PatientSave savePatient(const PatientRecord &patient, const std::optional<PatientRecord> &original,
+                            QString &error) const;
 
     // Destroy queries and models that use this connection before destroying Database.
     QSqlDatabase connection() const;

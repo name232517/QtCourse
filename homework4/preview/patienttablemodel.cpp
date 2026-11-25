@@ -1,5 +1,7 @@
 #include "patienttablemodel.h"
 
+#include "database.h"
+
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QStringList>
@@ -7,9 +9,15 @@
 
 #include <utility>
 
-bool PatientTableModel::load(const QSqlDatabase &database, QString &error)
+PatientTableModel::PatientTableModel(const Database &database, QObject *parent)
+    : QSqlQueryModel(parent), database_(database)
+{
+}
+
+bool PatientTableModel::load(QString &error)
 {
     error.clear();
+    const QSqlDatabase database = database_.connection();
     if (!database.isOpen()) {
         clear();
         error = QStringLiteral("请先打开数据库。");
@@ -47,6 +55,24 @@ bool PatientTableModel::load(const QSqlDatabase &database, QString &error)
     return true;
 }
 
+PatientRecord PatientTableModel::patientAt(int row) const
+{
+    const auto value = [this, row](Column column) { return data(index(row, column), Qt::EditRole); };
+    const QVariant height = value(Height);
+    const QVariant weight = value(Weight);
+    PatientRecord patient;
+    patient.id = value(Id).toString();
+    patient.name = value(Name).toString();
+    patient.identityCard = value(IdentityCard).toString();
+    patient.sex = value(Sex).toInt();
+    patient.birthDate = value(BirthDate).toString();
+    const QVariant mobile = value(Mobile);
+    patient.mobile = mobile.isNull() ? QString() : mobile.toString();
+    patient.height = height.isNull() ? std::nullopt : std::optional<double>(height.toDouble());
+    patient.weight = weight.isNull() ? std::nullopt : std::optional<double>(weight.toDouble());
+    return patient;
+}
+
 QVariant PatientTableModel::data(const QModelIndex &index, int role) const
 {
     const QVariant value = QSqlQueryModel::data(index, role);
@@ -55,17 +81,46 @@ QVariant PatientTableModel::data(const QModelIndex &index, int role) const
     }
 
     if (index.column() == Sex) {
-        switch (value.toInt()) {
-        case 1:
-            return QStringLiteral("男");
-        case 2:
-            return QStringLiteral("女");
-        default:
-            return QStringLiteral("未知");
-        }
+        return PatientRecord::sexLabel(value.toInt());
     }
     if (index.column() == Mobile && value.toString().isEmpty()) {
         return QStringLiteral("—");
     }
     return value;
+}
+
+Qt::ItemFlags PatientTableModel::flags(const QModelIndex &index) const
+{
+    auto result = QSqlQueryModel::flags(index);
+    if (index.isValid() && index.column() == Sex) {
+        result |= Qt::ItemIsEditable;
+    }
+    return result;
+}
+
+bool PatientTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
+{
+    if (!index.isValid() || index.column() != Sex || role != Qt::EditRole) {
+        return false;
+    }
+    bool numeric = false;
+    const int sex = value.toInt(&numeric);
+    if (!numeric || sex < 0 || sex > 2) {
+        return false;
+    }
+
+    const PatientRecord original = patientAt(index.row());
+    if (original.sex == sex) {
+        return true;
+    }
+    PatientRecord updated = original;
+    updated.sex = sex;
+    QString error;
+    if (database_.savePatient(updated, original, error) != Database::PatientSave::Saved) {
+        emit patientSaveFailed(error);
+        return false;
+    }
+
+    emit patientSaved(updated.id);
+    return true;
 }

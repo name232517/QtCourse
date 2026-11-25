@@ -83,8 +83,8 @@ int main(int argc, char *argv[])
         return reportDatabaseError(QStringLiteral("演示数据导入失败"), error);
     }
 
-    PatientTableModel patients;
-    if (!patients.load(database.connection(), error)) {
+    PatientTableModel patients(database);
+    if (!patients.load(error)) {
         return reportDatabaseError(QStringLiteral("数据库读取失败"), error);
     }
 

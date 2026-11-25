@@ -1,14 +1,64 @@
 #include "database.h"
 #include "passworddigest.h"
 
+#include <QDate>
 #include <QFile>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QUuid>
 #include <QVariant>
 
+#include <cmath>
+
 namespace {
 constexpr int SchemaVersion = 1;
+
+QString validatePatient(const PatientRecord &patient, const std::optional<PatientRecord> &original)
+{
+    if (patient.id.trimmed().isEmpty() || patient.id.toUcs4().size() > 32) {
+        return QStringLiteral("请输入 1 至 32 个字符的病历编号。");
+    }
+    if (patient.name.trimmed().isEmpty() || patient.name.toUcs4().size() > 64) {
+        return QStringLiteral("请输入 1 至 64 个字符的姓名。");
+    }
+    if (patient.identityCard.trimmed().isEmpty() || patient.identityCard.toUcs4().size() > 20
+        || patient.identityCard != patient.identityCard.trimmed()) {
+        return QStringLiteral("请输入 1 至 20 个字符的证件号码。");
+    }
+    if (patient.sex < 0 || patient.sex > 2) {
+        return QStringLiteral("请选择性别。");
+    }
+    if (!original || patient.birthDate != original->birthDate) {
+        const QDate birthDate = QDate::fromString(patient.birthDate, Qt::ISODate);
+        if (!birthDate.isValid() || birthDate > QDate::currentDate()) {
+            return QStringLiteral("请选择有效的出生日期，且不能晚于今天。");
+        }
+    }
+    if (patient.mobile.toUcs4().size() > 20) {
+        return QStringLiteral("手机号码最多可填写 20 个字符。");
+    }
+    if (patient.height && (!std::isfinite(*patient.height) || *patient.height <= 0)) {
+        return QStringLiteral("身高应为大于零的数字，或留空。");
+    }
+    if (patient.weight && (!std::isfinite(*patient.weight) || *patient.weight <= 0)) {
+        return QStringLiteral("体重应为大于零的数字，或留空。");
+    }
+    return {};
+}
+
+void bindPatientFields(QSqlQuery &query, const PatientRecord &patient, const QString &prefix)
+{
+    query.bindValue(prefix + QStringLiteral("name"), patient.name);
+    query.bindValue(prefix + QStringLiteral("card"), patient.identityCard);
+    query.bindValue(prefix + QStringLiteral("sex"), patient.sex);
+    query.bindValue(prefix + QStringLiteral("dob"), patient.birthDate);
+    query.bindValue(prefix + QStringLiteral("mobile"), patient.mobile.isNull()
+        ? QVariant(QMetaType::fromType<QString>()) : QVariant(patient.mobile));
+    query.bindValue(prefix + QStringLiteral("height"), patient.height
+        ? QVariant(*patient.height) : QVariant(QMetaType::fromType<double>()));
+    query.bindValue(prefix + QStringLiteral("weight"), patient.weight
+        ? QVariant(*patient.weight) : QVariant(QMetaType::fromType<double>()));
+}
 }
 
 Database::Database()
@@ -207,6 +257,61 @@ Database::PatientRemoval Database::removePatient(const QString &id, QString &err
         return PatientRemoval::Error;
     }
     return removed == 0 ? PatientRemoval::Missing : PatientRemoval::Removed;
+}
+
+Database::PatientSave Database::savePatient(const PatientRecord &patient,
+                                           const std::optional<PatientRecord> &original, QString &error) const
+{
+    error = validatePatient(patient, original);
+    if (!error.isEmpty()) {
+        return PatientSave::Error;
+    }
+    if (!db_.isOpen()) {
+        error = QStringLiteral("数据库连接未打开。");
+        return PatientSave::Error;
+    }
+    if (original && patient.id != original->id) {
+        error = QStringLiteral("已有患者的病历编号不可修改。");
+        return PatientSave::Error;
+    }
+
+    QSqlQuery query(db_);
+    // Match the original values so a form cannot overwrite changes made since it opened.
+    const QString statement = original ? QStringLiteral(
+        "UPDATE Patient SET NAME = :name, ID_CARD = :card, SEX = :sex, DOB = :dob, "
+        "MOBILEPHONE = :mobile, HEIGHT = :height, WEIGHT = :weight WHERE ID = :id "
+        "AND NAME IS :oldname AND ID_CARD COLLATE BINARY IS :oldcard AND SEX IS :oldsex "
+        "AND DOB IS :olddob AND MOBILEPHONE IS :oldmobile "
+        "AND HEIGHT IS :oldheight AND WEIGHT IS :oldweight") : QStringLiteral(
+        "INSERT INTO Patient (ID, NAME, ID_CARD, SEX, DOB, MOBILEPHONE, HEIGHT, WEIGHT) "
+        "VALUES (:id, :name, :card, :sex, :dob, :mobile, :height, :weight)");
+    if (!query.prepare(statement)) {
+        error = QStringLiteral("无法保存患者档案。%1").arg(query.lastError().text());
+        return PatientSave::Error;
+    }
+
+    query.bindValue(QStringLiteral(":id"), patient.id);
+    bindPatientFields(query, patient, QStringLiteral(":"));
+    if (original) {
+        bindPatientFields(query, *original, QStringLiteral(":old"));
+    }
+    if (!query.exec()) {
+        const QSqlError sqlError = query.lastError();
+        const QString detail = sqlError.databaseText();
+        if (detail.contains(QStringLiteral("UNIQUE constraint failed: Patient.ID_CARD"))) {
+            error = QStringLiteral("证件号码已存在，请核对后重试。");
+        } else if (detail.contains(QStringLiteral("UNIQUE constraint failed: Patient.ID"))) {
+            error = QStringLiteral("病历编号已存在，请使用其他编号。");
+        } else {
+            error = QStringLiteral("无法保存患者档案。%1").arg(sqlError.text());
+        }
+        return PatientSave::Error;
+    }
+    if (original && query.numRowsAffected() == 0) {
+        error = QStringLiteral("该患者记录已被更改或删除，请返回列表后重新查询。");
+        return PatientSave::Stale;
+    }
+    return PatientSave::Saved;
 }
 
 QSqlDatabase Database::connection() const
