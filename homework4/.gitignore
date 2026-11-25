@@ -1,0 +1,9 @@
+/build/
+/build-*/
+/.qtcreator/
+/.vs/
+CMakeLists.txt.user*
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal

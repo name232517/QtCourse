@@ -1,0 +1,52 @@
+CREATE TABLE "User" (
+    ID TEXT PRIMARY KEY NOT NULL CHECK (length(trim(ID)) BETWEEN 1 AND 32),
+    FULLNAME TEXT NOT NULL CHECK (length(trim(FULLNAME)) BETWEEN 1 AND 64),
+    USERNAME TEXT NOT NULL UNIQUE
+        CHECK (USERNAME = trim(USERNAME) AND length(USERNAME) BETWEEN 1 AND 32),
+    PASSWORD TEXT NOT NULL CHECK (length(PASSWORD) > 0)
+);
+
+CREATE TABLE Patient (
+    ID TEXT PRIMARY KEY NOT NULL CHECK (length(trim(ID)) BETWEEN 1 AND 32),
+    ID_CARD TEXT NOT NULL COLLATE NOCASE UNIQUE
+        CHECK (ID_CARD = trim(ID_CARD) AND length(ID_CARD) BETWEEN 1 AND 20),
+    NAME TEXT NOT NULL CHECK (length(trim(NAME)) BETWEEN 1 AND 64),
+    SEX INTEGER NOT NULL CHECK (SEX IN (0, 1, 2)),
+    DOB TEXT NOT NULL CHECK (length(DOB) = 10 AND date(DOB, '+0 days') IS DOB),
+    HEIGHT REAL CHECK (typeof(HEIGHT) IN ('null', 'real') AND (HEIGHT IS NULL OR HEIGHT > 0)),
+    WEIGHT REAL CHECK (typeof(WEIGHT) IN ('null', 'real') AND (WEIGHT IS NULL OR WEIGHT > 0)),
+    MOBILEPHONE TEXT CHECK (length(MOBILEPHONE) <= 20),
+    CREATEDTIMESTAMP TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE Department (
+    ID TEXT PRIMARY KEY NOT NULL CHECK (length(trim(ID)) BETWEEN 1 AND 32),
+    NAME TEXT NOT NULL UNIQUE CHECK (length(trim(NAME)) BETWEEN 1 AND 64)
+);
+
+CREATE TABLE Doctor (
+    ID TEXT PRIMARY KEY NOT NULL CHECK (length(trim(ID)) BETWEEN 1 AND 32),
+    EMPLOYEENO TEXT NOT NULL UNIQUE CHECK (length(trim(EMPLOYEENO)) BETWEEN 1 AND 32),
+    NAME TEXT NOT NULL CHECK (length(trim(NAME)) BETWEEN 1 AND 64),
+    DEPARTMENT_ID TEXT REFERENCES Department(ID) ON DELETE SET NULL
+);
+
+CREATE INDEX doctor_department_idx ON Doctor(DEPARTMENT_ID);
+
+CREATE TABLE History (
+    ID TEXT PRIMARY KEY NOT NULL CHECK (length(trim(ID)) BETWEEN 1 AND 32),
+    USER_ID TEXT REFERENCES "User"(ID) ON DELETE SET NULL,
+    EVENT TEXT NOT NULL CHECK (length(trim(EVENT)) BETWEEN 1 AND 255),
+    TIMESTAMP TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX history_user_idx ON History(USER_ID);
+
+CREATE VIEW PatientOverview AS
+SELECT Patient.*,
+       CAST(strftime('%Y', 'now', 'localtime') AS INTEGER)
+       - CAST(strftime('%Y', DOB) AS INTEGER)
+       - (strftime('%m-%d', 'now', 'localtime') < strftime('%m-%d', DOB)) AS AGE
+FROM Patient;
+
+PRAGMA user_version = 1;
