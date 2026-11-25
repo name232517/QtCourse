@@ -4,6 +4,7 @@
 
 #include <QWidget>
 
+class PatientTableModel;
 class QComboBox;
 class QDateEdit;
 class QDoubleSpinBox;
@@ -18,13 +19,13 @@ class QTableView;
 class PreviewWindow final : public QWidget
 {
 public:
-    explicit PreviewWindow(QWidget *parent = nullptr);
+    explicit PreviewWindow(PatientTableModel &patientData, QWidget *parent = nullptr);
 
 private:
     QWidget *createLoginPage();
-    QWidget *createWorkspace();
+    QWidget *createWorkspace(PatientTableModel &patientData);
     QWidget *createHomePage();
-    QWidget *createPatientPage();
+    QWidget *createPatientPage(PatientTableModel &patientData);
     QWidget *createEditorPage();
     void applyPage(NavigationController::Page previous, NavigationController::Page current);
     void clearWorkspace();
@@ -51,6 +52,9 @@ private:
     QSortFilterProxyModel *patients_ = nullptr;
     QStackedWidget *patientResults_ = nullptr;
     QLabel *patientCount_ = nullptr;
+    QLabel *emptyTitle_ = nullptr;
+    QLabel *emptyDescription_ = nullptr;
+    QPushButton *clearSearch_ = nullptr;
     QPushButton *editAction_ = nullptr;
     QPushButton *deleteAction_ = nullptr;
 

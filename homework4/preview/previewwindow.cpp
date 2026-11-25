@@ -1,5 +1,7 @@
 #include "previewwindow.h"
 
+#include "patienttablemodel.h"
+
 #include <QAbstractItemView>
 #include <QComboBox>
 #include <QDateEdit>
@@ -19,16 +21,13 @@
 #include <QShortcut>
 #include <QSortFilterProxyModel>
 #include <QStackedWidget>
-#include <QStandardItemModel>
 #include <QTableView>
 #include <QVBoxLayout>
 
 using Page = NavigationController::Page;
+using PatientColumn = PatientTableModel::Column;
 
 namespace {
-enum PatientColumn { Id, Name, Sex, BirthDate, IdentityCard, Mobile, ColumnCount };
-enum PatientRole { HeightRole = Qt::UserRole + 1, WeightRole };
-
 enum class Icon { Clinic, Home, Patients, Search, Add };
 
 QIcon interfaceIcon(Icon icon)
@@ -146,7 +145,7 @@ void configureMeasure(QDoubleSpinBox *field, qreal maximum)
 }
 }
 
-PreviewWindow::PreviewWindow(QWidget *parent)
+PreviewWindow::PreviewWindow(PatientTableModel &patientData, QWidget *parent)
     : QWidget(parent)
 {
     setWindowTitle(QStringLiteral("诊疗工作台"));
@@ -158,7 +157,7 @@ PreviewWindow::PreviewWindow(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     root_ = new QStackedWidget;
     loginPage_ = createLoginPage();
-    workspace_ = createWorkspace();
+    workspace_ = createWorkspace(patientData);
     root_->addWidget(loginPage_);
     root_->addWidget(workspace_);
     layout->addWidget(root_);
@@ -215,7 +214,7 @@ QWidget *PreviewWindow::createLoginPage()
     return page;
 }
 
-QWidget *PreviewWindow::createWorkspace()
+QWidget *PreviewWindow::createWorkspace(PatientTableModel &patientData)
 {
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("workspace"));
@@ -252,7 +251,7 @@ QWidget *PreviewWindow::createWorkspace()
 
     pages_ = new QStackedWidget;
     homePage_ = createHomePage();
-    patientPage_ = createPatientPage();
+    patientPage_ = createPatientPage(patientData);
     editorPage_ = createEditorPage();
     pages_->addWidget(homePage_);
     pages_->addWidget(patientPage_);
@@ -312,7 +311,7 @@ QWidget *PreviewWindow::createHomePage()
     return page;
 }
 
-QWidget *PreviewWindow::createPatientPage()
+QWidget *PreviewWindow::createPatientPage(PatientTableModel &patientData)
 {
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("patientPage"));
@@ -358,37 +357,8 @@ QWidget *PreviewWindow::createPatientPage()
     toolbar->addWidget(deleteAction_);
     body->addLayout(toolbar);
 
-    auto *records = new QStandardItemModel(0, ColumnCount, page);
-    records->setHorizontalHeaderLabels({QStringLiteral("病历编号"), QStringLiteral("姓名"),
-        QStringLiteral("性别"), QStringLiteral("出生日期"), QStringLiteral("证件号码"),
-        QStringLiteral("手机号码")});
-    struct DemoPatient {
-        QStringList cells;
-        double height;
-        double weight;
-    };
-    const DemoPatient demoRows[] = {
-        {{QStringLiteral("demo-001"), QStringLiteral("林晓晨"), QStringLiteral("男"),
-          QStringLiteral("2000-01-01"), QStringLiteral("000000200001010001"), QStringLiteral("—")},
-         172.5, 66.0},
-        {{QStringLiteral("demo-002"), QStringLiteral("陈若宁"), QStringLiteral("女"),
-          QStringLiteral("1998-05-14"), QStringLiteral("000000199805140002"), QStringLiteral("—")},
-         163.0, 54.5},
-        {{QStringLiteral("demo-003"), QStringLiteral("罗雨安"), QStringLiteral("未知"),
-          QStringLiteral("2003-08-25"), QStringLiteral("000000200308250003"), QStringLiteral("—")},
-         0, 0}
-    };
-    for (const auto &row : demoRows) {
-        QList<QStandardItem *> items;
-        for (const QString &value : row.cells) {
-            items.append(new QStandardItem(value));
-        }
-        items[Id]->setData(row.height, HeightRole);
-        items[Id]->setData(row.weight, WeightRole);
-        records->appendRow(items);
-    }
     patients_ = new QSortFilterProxyModel(page);
-    patients_->setSourceModel(records);
+    patients_->setSourceModel(&patientData);
     patients_->setFilterCaseSensitivity(Qt::CaseInsensitive);
     patients_->setFilterKeyColumn(-1);
 
@@ -407,24 +377,27 @@ QWidget *PreviewWindow::createPatientPage()
     header->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     header->setSectionResizeMode(QHeaderView::Interactive);
     header->setMinimumSectionSize(64);
-    header->resizeSection(Id, 130);
-    header->resizeSection(Name, 128);
-    header->resizeSection(Sex, 86);
-    header->resizeSection(BirthDate, 144);
-    header->resizeSection(IdentityCard, 196);
-    header->resizeSection(Mobile, 132);
+    header->resizeSection(PatientColumn::Id, 130);
+    header->resizeSection(PatientColumn::Name, 128);
+    header->resizeSection(PatientColumn::Sex, 86);
+    header->resizeSection(PatientColumn::BirthDate, 144);
+    header->resizeSection(PatientColumn::IdentityCard, 196);
+    header->resizeSection(PatientColumn::Mobile, 132);
+    patientTable_->hideColumn(PatientColumn::Height);
+    patientTable_->hideColumn(PatientColumn::Weight);
     header->setStretchLastSection(true);
 
     auto *empty = new QWidget;
     auto *emptyLayout = new QVBoxLayout(empty);
     emptyLayout->setSpacing(8);
     emptyLayout->addStretch();
-    emptyLayout->addWidget(label(QStringLiteral("未找到患者"), "sectionTitle"), 0, Qt::AlignHCenter);
-    emptyLayout->addWidget(label(QStringLiteral("请检查关键词或查看全部患者。"), "muted"),
-                           0, Qt::AlignHCenter);
-    auto *clear = button(QStringLiteral("查看全部"));
-    clear->setObjectName(QStringLiteral("clearSearch"));
-    emptyLayout->addWidget(clear, 0, Qt::AlignHCenter);
+    emptyTitle_ = label({}, "sectionTitle");
+    emptyDescription_ = label({}, "muted");
+    clearSearch_ = button(QStringLiteral("查看全部"));
+    clearSearch_->setObjectName(QStringLiteral("clearSearch"));
+    emptyLayout->addWidget(emptyTitle_, 0, Qt::AlignHCenter);
+    emptyLayout->addWidget(emptyDescription_, 0, Qt::AlignHCenter);
+    emptyLayout->addWidget(clearSearch_, 0, Qt::AlignHCenter);
     emptyLayout->addStretch();
 
     patientResults_ = new QStackedWidget;
@@ -440,7 +413,7 @@ QWidget *PreviewWindow::createPatientPage()
     patientCount_->setObjectName(QStringLiteral("patientCount"));
     footer->addWidget(patientCount_);
     footer->addStretch();
-    footer->addWidget(label(QStringLiteral("示例数据"), "muted"));
+    footer->addWidget(label(QStringLiteral("SQLite 已连接"), "muted"));
     body->addWidget(foot);
     layout->addWidget(panel, 1);
 
@@ -451,7 +424,7 @@ QWidget *PreviewWindow::createPatientPage()
             filterPatients();
         }
     });
-    connect(clear, &QPushButton::clicked, this, [this] {
+    connect(clearSearch_, &QPushButton::clicked, this, [this] {
         search_->clear();
         search_->setFocus();
     });
@@ -510,7 +483,10 @@ QWidget *PreviewWindow::createEditorPage()
     identityCard_ = new QLineEdit;
     identityCard_->setMaxLength(20);
     sex_ = new QComboBox;
-    sex_->addItems({QStringLiteral("请选择"), QStringLiteral("未知"), QStringLiteral("男"), QStringLiteral("女")});
+    sex_->addItem(QStringLiteral("请选择"));
+    sex_->addItem(QStringLiteral("未知"), 0);
+    sex_->addItem(QStringLiteral("男"), 1);
+    sex_->addItem(QStringLiteral("女"), 2);
     birthDate_ = new QDateEdit;
     birthDate_->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
     birthDate_->setCalendarPopup(true);
@@ -605,8 +581,16 @@ void PreviewWindow::clearWorkspace()
 void PreviewWindow::filterPatients()
 {
     patientTable_->clearSelection();
-    patients_->setFilterFixedString(search_->text().trimmed());
+    const QString keyword = search_->text().trimmed();
+    patients_->setFilterFixedString(keyword);
     const int count = patients_->rowCount();
+    if (count == 0) {
+        const bool filtered = !keyword.isEmpty();
+        emptyTitle_->setText(filtered ? QStringLiteral("未找到患者") : QStringLiteral("暂无患者记录"));
+        emptyDescription_->setText(filtered ? QStringLiteral("请检查关键词或查看全部患者。")
+                                             : QStringLiteral("当前数据库中没有患者档案。"));
+        clearSearch_->setVisible(filtered);
+    }
     patientResults_->setCurrentIndex(count > 0 ? 0 : 1);
     patientCount_->setText(QStringLiteral("%1 条患者记录").arg(count));
     updatePatientActions();
@@ -631,20 +615,20 @@ void PreviewWindow::showEditor(const QModelIndex &patient)
 
 void PreviewWindow::populateEditor(const QModelIndex &patient)
 {
-    const auto value = [&patient](int column) {
-        return patient.siblingAtColumn(column).data().toString();
+    const auto value = [&patient](PatientColumn column) {
+        return patient.siblingAtColumn(column).data(Qt::EditRole);
     };
     const bool editing = patient.isValid();
     editorTitle_->setText(editing ? QStringLiteral("编辑患者") : QStringLiteral("新增患者"));
     editorNotice_->setText(QStringLiteral("预览模式下不会保存表单。"));
-    patientId_->setText(value(Id));
+    patientId_->setText(value(PatientColumn::Id).toString());
     patientId_->setReadOnly(editing);
-    patientName_->setText(value(Name));
-    identityCard_->setText(value(IdentityCard));
-    sex_->setCurrentIndex(editing ? sex_->findText(value(Sex)) : 0);
-    birthDate_->setDate(editing ? QDate::fromString(value(BirthDate), Qt::ISODate)
+    patientName_->setText(value(PatientColumn::Name).toString());
+    identityCard_->setText(value(PatientColumn::IdentityCard).toString());
+    sex_->setCurrentIndex(editing ? sex_->findData(value(PatientColumn::Sex)) : 0);
+    birthDate_->setDate(editing ? QDate::fromString(value(PatientColumn::BirthDate).toString(), Qt::ISODate)
                                 : birthDate_->minimumDate());
-    mobile_->setText(value(Mobile) == QStringLiteral("—") ? QString() : value(Mobile));
-    height_->setValue(patient.siblingAtColumn(Id).data(HeightRole).toDouble());
-    weight_->setValue(patient.siblingAtColumn(Id).data(WeightRole).toDouble());
+    mobile_->setText(value(PatientColumn::Mobile).toString());
+    height_->setValue(value(PatientColumn::Height).toDouble());
+    weight_->setValue(value(PatientColumn::Weight).toDouble());
 }

@@ -6,6 +6,10 @@ QWidget#loginPage, QWidget#workspace {
     background: #f3f5f6;
 }
 
+QMessageBox {
+    background: #ffffff;
+}
+
 QFrame#appBar {
     background: #ffffff;
     border-bottom: 1px solid #dce3e5;
