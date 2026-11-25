@@ -516,9 +516,6 @@ QWidget *PreviewWindow::createEditorPage()
     fields->setColumnStretch(0, 1);
     fields->setColumnStretch(1, 1);
 
-    patientId_ = new QLineEdit;
-    patientId_->setObjectName(QStringLiteral("patientId"));
-    patientId_->setMaxLength(64);
     patientName_ = new QLineEdit;
     patientName_->setObjectName(QStringLiteral("patientName"));
     patientName_->setMaxLength(128);
@@ -541,6 +538,14 @@ QWidget *PreviewWindow::createEditorPage()
     mobile_ = new QLineEdit;
     mobile_->setObjectName(QStringLiteral("patientMobile"));
     mobile_->setMaxLength(40);
+    patientId_ = new QLineEdit;
+    patientId_->setObjectName(QStringLiteral("patientId"));
+    patientId_->setReadOnly(true);
+    patientId_->setPlaceholderText(QStringLiteral("保存时自动生成"));
+    createdTimestamp_ = new QLineEdit;
+    createdTimestamp_->setObjectName(QStringLiteral("patientCreatedTimestamp"));
+    createdTimestamp_->setReadOnly(true);
+    createdTimestamp_->setPlaceholderText(QStringLiteral("保存时自动记录"));
     height_ = new QLineEdit;
     height_->setObjectName(QStringLiteral("patientHeight"));
     height_->setPlaceholderText(QStringLiteral("选填"));
@@ -548,12 +553,13 @@ QWidget *PreviewWindow::createEditorPage()
     weight_->setObjectName(QStringLiteral("patientWeight"));
     weight_->setPlaceholderText(QStringLiteral("选填"));
 
-    addField(fields, 0, 0, QStringLiteral("病历编号 *"), patientId_);
-    addField(fields, 0, 1, QStringLiteral("姓名 *"), patientName_);
+    addField(fields, 0, 0, QStringLiteral("姓名 *"), patientName_);
+    addField(fields, 0, 1, QStringLiteral("性别 *"), sex_);
     addField(fields, 1, 0, QStringLiteral("证件号码 *"), identityCard_);
-    addField(fields, 1, 1, QStringLiteral("性别 *"), sex_);
-    addField(fields, 2, 0, QStringLiteral("出生日期 *"), birthDate_);
-    addField(fields, 2, 1, QStringLiteral("手机号码"), mobile_);
+    addField(fields, 1, 1, QStringLiteral("出生日期 *"), birthDate_);
+    addField(fields, 2, 0, QStringLiteral("手机号码"), mobile_);
+    addField(fields, 3, 0, QStringLiteral("病历编号"), patientId_);
+    addField(fields, 3, 1, QStringLiteral("创建时间（本地）"), createdTimestamp_);
     panelLayout->addLayout(fields);
     panelLayout->addWidget(divider());
     panelLayout->addWidget(label(QStringLiteral("体征记录"), "sectionTitle"));
@@ -670,7 +676,7 @@ void PreviewWindow::applyPage(Page previous, Page current)
     case Page::Editor:
         pages_->setCurrentWidget(editorPage_);
         patientNav_->setChecked(true);
-        focus = patientId_->isReadOnly() ? patientName_ : patientId_;
+        focus = patientName_;
         break;
     }
 
@@ -738,16 +744,15 @@ void PreviewWindow::updatePatientResults(const QString &error)
 void PreviewWindow::configurePatientColumns()
 {
     auto *header = patientTable_->horizontalHeader();
-    header->setStretchLastSection(false);
-    header->resizeSection(PatientColumn::Id, 130);
-    header->resizeSection(PatientColumn::Name, 128);
-    header->resizeSection(PatientColumn::Sex, 86);
-    header->resizeSection(PatientColumn::BirthDate, 144);
-    header->resizeSection(PatientColumn::IdentityCard, 196);
-    header->resizeSection(PatientColumn::Mobile, 132);
+    header->setSectionResizeMode(PatientColumn::Id, QHeaderView::Stretch);
+    header->resizeSection(PatientColumn::Name, 96);
+    header->resizeSection(PatientColumn::Sex, 64);
+    header->resizeSection(PatientColumn::BirthDate, 105);
+    header->resizeSection(PatientColumn::IdentityCard, 155);
+    header->resizeSection(PatientColumn::Mobile, 112);
+    header->resizeSection(PatientColumn::CreatedTimestamp, 166);
     patientTable_->hideColumn(PatientColumn::Height);
     patientTable_->hideColumn(PatientColumn::Weight);
-    header->setStretchLastSection(true);
 }
 
 void PreviewWindow::updatePatientActions()
@@ -819,7 +824,7 @@ void PreviewWindow::populateEditor(const QModelIndex &patient)
     editorTitle_->setText(editing ? QStringLiteral("编辑患者") : QStringLiteral("新增患者"));
     editorNotice_->clear();
     patientId_->setText(record.id);
-    patientId_->setReadOnly(editing);
+    createdTimestamp_->setText(source.siblingAtColumn(PatientColumn::CreatedTimestamp).data().toString());
     patientName_->setText(record.name);
     identityCard_->setText(record.identityCard);
     sex_->setCurrentIndex(editing ? sex_->findData(record.sex) : 0);
@@ -845,7 +850,6 @@ void PreviewWindow::saveEditor()
         const QString text = field->text();
         return text == previous ? previous : text.trimmed();
     };
-    updated.id = editedText(patientId_, updated.id);
     updated.name = editedText(patientName_, updated.name);
     updated.identityCard = editedText(identityCard_, updated.identityCard);
     updated.sex = sex_->currentData().isValid() ? sex_->currentData().toInt() : -1;

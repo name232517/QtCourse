@@ -14,6 +14,7 @@ struct PatientRecord
     QString mobile;
     std::optional<double> height;
     std::optional<double> weight;
+    QString createdTimestamp;
 
     static QString sexLabel(int value)
     {

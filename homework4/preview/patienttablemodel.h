@@ -11,7 +11,7 @@ class PatientTableModel final : public QSqlQueryModel
     Q_OBJECT
 
 public:
-    enum Column { Id, Name, Sex, BirthDate, IdentityCard, Mobile, Height, Weight };
+    enum Column { Id, Name, Sex, BirthDate, IdentityCard, Mobile, Height, Weight, CreatedTimestamp };
 
     explicit PatientTableModel(const Database &database, QObject *parent = nullptr);
     bool load(QString &error);

@@ -79,6 +79,7 @@ private:
     QLabel *editorTitle_ = nullptr;
     QLabel *editorNotice_ = nullptr;
     QLineEdit *patientId_ = nullptr;
+    QLineEdit *createdTimestamp_ = nullptr;
     QLineEdit *patientName_ = nullptr;
     QLineEdit *identityCard_ = nullptr;
     QComboBox *sex_ = nullptr;

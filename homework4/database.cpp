@@ -2,6 +2,7 @@
 #include "passworddigest.h"
 
 #include <QDate>
+#include <QDateTime>
 #include <QFile>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -15,9 +16,6 @@ constexpr int SchemaVersion = 1;
 
 QString validatePatient(const PatientRecord &patient, const std::optional<PatientRecord> &original)
 {
-    if (patient.id.trimmed().isEmpty() || patient.id.toUcs4().size() > 32) {
-        return QStringLiteral("请输入 1 至 32 个字符的病历编号。");
-    }
     if (patient.name.trimmed().isEmpty() || patient.name.toUcs4().size() > 64) {
         return QStringLiteral("请输入 1 至 64 个字符的姓名。");
     }
@@ -259,7 +257,7 @@ Database::PatientRemoval Database::removePatient(const QString &id, QString &err
     return removed == 0 ? PatientRemoval::Missing : PatientRemoval::Removed;
 }
 
-Database::PatientSave Database::savePatient(const PatientRecord &patient,
+Database::PatientSave Database::savePatient(PatientRecord &patient,
                                            const std::optional<PatientRecord> &original, QString &error) const
 {
     error = validatePatient(patient, original);
@@ -275,6 +273,9 @@ Database::PatientSave Database::savePatient(const PatientRecord &patient,
         return PatientSave::Error;
     }
 
+    const QString id = original ? original->id : QUuid::createUuid().toString(QUuid::Id128);
+    const QString createdTimestamp = original ? original->createdTimestamp
+        : QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     QSqlQuery query(db_);
     // Match the original values so a form cannot overwrite changes made since it opened.
     const QString statement = original ? QStringLiteral(
@@ -282,18 +283,22 @@ Database::PatientSave Database::savePatient(const PatientRecord &patient,
         "MOBILEPHONE = :mobile, HEIGHT = :height, WEIGHT = :weight WHERE ID = :id "
         "AND NAME IS :oldname AND ID_CARD COLLATE BINARY IS :oldcard AND SEX IS :oldsex "
         "AND DOB IS :olddob AND MOBILEPHONE IS :oldmobile "
-        "AND HEIGHT IS :oldheight AND WEIGHT IS :oldweight") : QStringLiteral(
-        "INSERT INTO Patient (ID, NAME, ID_CARD, SEX, DOB, MOBILEPHONE, HEIGHT, WEIGHT) "
-        "VALUES (:id, :name, :card, :sex, :dob, :mobile, :height, :weight)");
+        "AND HEIGHT IS :oldheight AND WEIGHT IS :oldweight AND CREATEDTIMESTAMP IS :oldcreated")
+        : QStringLiteral(
+        "INSERT INTO Patient (ID, NAME, ID_CARD, SEX, DOB, MOBILEPHONE, HEIGHT, WEIGHT, CREATEDTIMESTAMP) "
+        "VALUES (:id, :name, :card, :sex, :dob, :mobile, :height, :weight, :created)");
     if (!query.prepare(statement)) {
         error = QStringLiteral("无法保存患者档案。%1").arg(query.lastError().text());
         return PatientSave::Error;
     }
 
-    query.bindValue(QStringLiteral(":id"), patient.id);
+    query.bindValue(QStringLiteral(":id"), id);
     bindPatientFields(query, patient, QStringLiteral(":"));
     if (original) {
         bindPatientFields(query, *original, QStringLiteral(":old"));
+        query.bindValue(QStringLiteral(":oldcreated"), createdTimestamp);
+    } else {
+        query.bindValue(QStringLiteral(":created"), createdTimestamp);
     }
     if (!query.exec()) {
         const QSqlError sqlError = query.lastError();
@@ -301,7 +306,7 @@ Database::PatientSave Database::savePatient(const PatientRecord &patient,
         if (detail.contains(QStringLiteral("UNIQUE constraint failed: Patient.ID_CARD"))) {
             error = QStringLiteral("证件号码已存在，请核对后重试。");
         } else if (detail.contains(QStringLiteral("UNIQUE constraint failed: Patient.ID"))) {
-            error = QStringLiteral("病历编号已存在，请使用其他编号。");
+            error = QStringLiteral("生成的病历编号已存在，请重新保存。");
         } else {
             error = QStringLiteral("无法保存患者档案。%1").arg(sqlError.text());
         }
@@ -311,6 +316,8 @@ Database::PatientSave Database::savePatient(const PatientRecord &patient,
         error = QStringLiteral("该患者记录已被更改或删除，请返回列表后重新查询。");
         return PatientSave::Stale;
     }
+    patient.id = id;
+    patient.createdTimestamp = createdTimestamp;
     return PatientSave::Saved;
 }
 

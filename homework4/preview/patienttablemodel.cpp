@@ -2,6 +2,7 @@
 
 #include "database.h"
 
+#include <QDateTime>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QStringList>
@@ -26,7 +27,7 @@ bool PatientTableModel::load(QString &error)
 
     QSqlQuery query(database);
     if (!query.exec(QStringLiteral(
-        "SELECT ID, NAME, SEX, DOB, ID_CARD, MOBILEPHONE, HEIGHT, WEIGHT "
+        "SELECT ID, NAME, SEX, DOB, ID_CARD, MOBILEPHONE, HEIGHT, WEIGHT, CREATEDTIMESTAMP "
         "FROM Patient ORDER BY ID"))) {
         clear();
         error = QStringLiteral("无法读取患者记录。%1").arg(query.lastError().text());
@@ -47,7 +48,7 @@ bool PatientTableModel::load(QString &error)
     const QStringList headers = {
         QStringLiteral("病历编号"), QStringLiteral("姓名"), QStringLiteral("性别"),
         QStringLiteral("出生日期"), QStringLiteral("证件号码"), QStringLiteral("手机号码"),
-        QStringLiteral("身高"), QStringLiteral("体重")
+        QStringLiteral("身高"), QStringLiteral("体重"), QStringLiteral("创建时间（本地）")
     };
     for (int column = 0; column < headers.size(); ++column) {
         setHeaderData(column, Qt::Horizontal, headers.at(column));
@@ -70,11 +71,16 @@ PatientRecord PatientTableModel::patientAt(int row) const
     patient.mobile = mobile.isNull() ? QString() : mobile.toString();
     patient.height = height.isNull() ? std::nullopt : std::optional<double>(height.toDouble());
     patient.weight = weight.isNull() ? std::nullopt : std::optional<double>(weight.toDouble());
+    patient.createdTimestamp = value(CreatedTimestamp).toString();
     return patient;
 }
 
 QVariant PatientTableModel::data(const QModelIndex &index, int role) const
 {
+    if (index.isValid() && role == Qt::ToolTipRole
+        && (index.column() == Id || index.column() == CreatedTimestamp)) {
+        return QSqlQueryModel::data(index, Qt::EditRole);
+    }
     const QVariant value = QSqlQueryModel::data(index, role);
     if (role != Qt::DisplayRole || !index.isValid()) {
         return value;
@@ -85,6 +91,12 @@ QVariant PatientTableModel::data(const QModelIndex &index, int role) const
     }
     if (index.column() == Mobile && value.toString().isEmpty()) {
         return QStringLiteral("—");
+    }
+    if (index.column() == CreatedTimestamp) {
+        const QDateTime timestamp = QDateTime::fromString(value.toString(), Qt::ISODate);
+        if (timestamp.isValid()) {
+            return timestamp.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+        }
     }
     return value;
 }

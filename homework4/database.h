@@ -23,7 +23,7 @@ public:
     bool addDemoData(QString &error);
     CredentialLookup passwordDigestForUser(const QString &username, QByteArray &digest) const;
     PatientRemoval removePatient(const QString &id, QString &error) const;
-    PatientSave savePatient(const PatientRecord &patient, const std::optional<PatientRecord> &original,
+    PatientSave savePatient(PatientRecord &patient, const std::optional<PatientRecord> &original,
                             QString &error) const;
 
     // Destroy queries and models that use this connection before destroying Database.
