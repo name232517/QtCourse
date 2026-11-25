@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Qt6 6.7.3 REQUIRED COMPONENTS Core Sql Network)
+find_package(Qt6 6.7.3 REQUIRED COMPONENTS Core Sql Network Widgets)
 
 qt_add_executable(QT3
     main.cpp
@@ -20,3 +20,19 @@ qt_add_resources(QT3 database_schema
 
 target_link_libraries(QT3 PRIVATE Qt6::Core Qt6::Sql Qt6::Network)
 target_compile_options(QT3 PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
+
+qt_add_executable(QT3Ui WIN32 MACOSX_BUNDLE
+    preview/main.cpp
+    preview/previewwindow.cpp
+    preview/previewwindow.h
+)
+
+qt_add_resources(QT3Ui preview_theme
+    PREFIX "/"
+    FILES
+        preview/theme.qss
+        preview/down-arrow.png
+)
+
+target_link_libraries(QT3Ui PRIVATE Qt6::Widgets)
+target_compile_options(QT3Ui PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
