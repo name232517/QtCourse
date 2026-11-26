@@ -190,9 +190,10 @@ bool Database::addDemoData(QString &error)
     query.addBindValue(QString::fromLatin1(digest));
     if (!query.exec() || !query.exec(QStringLiteral(
             "INSERT INTO Patient (ID, ID_CARD, NAME, SEX, DOB, HEIGHT, WEIGHT, MOBILEPHONE) VALUES "
-            "('demo-001', '000000200001010001', '林晓晨', 1, '2000-01-01', 172.5, 66.0, NULL), "
-            "('demo-002', '000000199805140002', '陈若宁', 2, '1998-05-14', 163.0, 54.5, NULL), "
-            "('demo-003', '000000200308250003', '罗雨安', 0, '2003-08-25', NULL, NULL, NULL) "
+            "('demo-001', '000000200001010001', '张三', 1, '2000-01-01', 172.5, 66.0, NULL), "
+            "('demo-002', '000000199805140002', '李四', 2, '1998-05-14', 163.0, 54.5, NULL), "
+            "('demo-003', '000000200308250003', '王五', 0, '2003-08-25', NULL, NULL, NULL), "
+            "('demo-004', '000000197511020004', '赵六', 1, '1975-11-02', 170.0, 68.0, NULL) "
             "ON CONFLICT(ID) DO NOTHING"))) {
         error = QStringLiteral("无法写入演示数据。%1").arg(query.lastError().text());
         db_.rollback();
