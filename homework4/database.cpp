@@ -189,6 +189,17 @@ bool Database::addDemoData(QString &error)
 
     query.addBindValue(QString::fromLatin1(digest));
     if (!query.exec() || !query.exec(QStringLiteral(
+            "INSERT INTO Department (ID, NAME) VALUES "
+            "('dept-01', '内科'), ('dept-02', '外科'), ('dept-03', '儿科') "
+            "ON CONFLICT(ID) DO NOTHING"))
+        || !query.exec(QStringLiteral(
+            "INSERT INTO Doctor (ID, EMPLOYEENO, NAME, DEPARTMENT_ID) VALUES "
+            "('doctor-01', 'D001', '周海', 'dept-01'), "
+            "('doctor-02', 'D002', '孙丽', 'dept-02'), "
+            "('doctor-03', 'D003', '陈铭', 'dept-03'), "
+            "('doctor-04', 'D004', '许文', NULL) "
+            "ON CONFLICT(ID) DO NOTHING"))
+        || !query.exec(QStringLiteral(
             "INSERT INTO Patient (ID, ID_CARD, NAME, SEX, DOB, HEIGHT, WEIGHT, MOBILEPHONE) VALUES "
             "('demo-001', '000000200001010001', '张三', 1, '2000-01-01', 172.5, 66.0, NULL), "
             "('demo-002', '000000199805140002', '李四', 2, '1998-05-14', 163.0, 54.5, NULL), "
@@ -208,15 +219,19 @@ bool Database::addDemoData(QString &error)
     return true;
 }
 
-Database::CredentialLookup Database::passwordDigestForUser(const QString &username, QByteArray &digest) const
+Database::CredentialLookup Database::passwordDigestForUser(const QString &username, QByteArray &digest,
+                                                          QString *userId) const
 {
     digest.clear();
+    if (userId) {
+        userId->clear();
+    }
     if (!db_.isOpen()) {
         return CredentialLookup::Error;
     }
 
     QSqlQuery query(db_);
-    if (!query.prepare(QStringLiteral("SELECT PASSWORD FROM \"User\" WHERE USERNAME = :username"))) {
+    if (!query.prepare(QStringLiteral("SELECT ID, PASSWORD FROM \"User\" WHERE USERNAME = :username"))) {
         return CredentialLookup::Error;
     }
     query.bindValue(QStringLiteral(":username"), username);
@@ -227,7 +242,10 @@ Database::CredentialLookup Database::passwordDigestForUser(const QString &userna
         return query.lastError().isValid() ? CredentialLookup::Error : CredentialLookup::UnknownUser;
     }
 
-    digest = query.value(0).toByteArray();
+    if (userId) {
+        *userId = query.value(0).toString();
+    }
+    digest = query.value(1).toByteArray();
     return CredentialLookup::Found;
 }
 
@@ -320,6 +338,238 @@ Database::PatientSave Database::savePatient(PatientRecord &patient,
     patient.id = id;
     patient.createdTimestamp = createdTimestamp;
     return PatientSave::Saved;
+}
+
+Database::DepartmentSave Database::saveDepartment(DepartmentRecord &department,
+                                                  const std::optional<DepartmentRecord> &original,
+                                                  QString &error) const
+{
+    error.clear();
+    department.name = department.name.trimmed();
+    if (department.name.isEmpty() || department.name.size() > 64) {
+        error = QStringLiteral("科室名称需要 1 至 64 个字符。");
+        return DepartmentSave::Error;
+    }
+    if (!db_.isOpen()) {
+        error = QStringLiteral("数据库连接未打开。");
+        return DepartmentSave::Error;
+    }
+    if (original && department.id != original->id) {
+        error = QStringLiteral("已有科室的编号不可修改。");
+        return DepartmentSave::Error;
+    }
+
+    const QString id = original ? original->id : QUuid::createUuid().toString(QUuid::Id128);
+    QSqlQuery query(db_);
+    const QString statement = original
+        ? QStringLiteral("UPDATE Department SET NAME = :name WHERE ID = :id AND NAME IS :oldname")
+        : QStringLiteral("INSERT INTO Department (ID, NAME) VALUES (:id, :name)");
+    if (!query.prepare(statement)) {
+        error = QStringLiteral("无法保存科室。%1").arg(query.lastError().text());
+        return DepartmentSave::Error;
+    }
+    query.bindValue(QStringLiteral(":id"), id);
+    query.bindValue(QStringLiteral(":name"), department.name);
+    if (original) {
+        query.bindValue(QStringLiteral(":oldname"), original->name);
+    }
+    if (!query.exec()) {
+        const QSqlError sqlError = query.lastError();
+        if (sqlError.databaseText().contains(QStringLiteral("UNIQUE constraint failed: Department.NAME"))) {
+            error = QStringLiteral("科室名称已存在，请换一个名称。");
+            return DepartmentSave::Duplicate;
+        }
+        error = QStringLiteral("无法保存科室。%1").arg(sqlError.text());
+        return DepartmentSave::Error;
+    }
+    if (original && query.numRowsAffected() == 0) {
+        error = QStringLiteral("该科室已被更改或删除，请重新查询。");
+        return DepartmentSave::Stale;
+    }
+    department.id = id;
+    return DepartmentSave::Saved;
+}
+
+Database::DepartmentRemoval Database::removeDepartment(const QString &id, QString &error) const
+{
+    error.clear();
+    if (!db_.isOpen()) {
+        error = QStringLiteral("数据库连接未打开。");
+        return DepartmentRemoval::Error;
+    }
+
+    QSqlQuery doctors(db_);
+    if (!doctors.prepare(QStringLiteral("SELECT COUNT(*) FROM Doctor WHERE DEPARTMENT_ID = :id"))) {
+        error = doctors.lastError().text();
+        return DepartmentRemoval::Error;
+    }
+    doctors.bindValue(QStringLiteral(":id"), id);
+    if (!doctors.exec() || !doctors.next()) {
+        error = doctors.lastError().text();
+        return DepartmentRemoval::Error;
+    }
+    const int assigned = doctors.value(0).toInt();
+    if (assigned > 0) {
+        error = QStringLiteral("该科室下仍有 %1 位医生，请先调整他们的科室。").arg(assigned);
+        return DepartmentRemoval::InUse;
+    }
+
+    QSqlQuery query(db_);
+    if (!query.prepare(QStringLiteral("DELETE FROM Department WHERE ID = :id"))) {
+        error = query.lastError().text();
+        return DepartmentRemoval::Error;
+    }
+    query.bindValue(QStringLiteral(":id"), id);
+    if (!query.exec()) {
+        error = query.lastError().text();
+        return DepartmentRemoval::Error;
+    }
+    const int removed = query.numRowsAffected();
+    if (removed < 0) {
+        error = QStringLiteral("无法确认删除结果，请重新查询。");
+        return DepartmentRemoval::Error;
+    }
+    return removed == 0 ? DepartmentRemoval::Missing : DepartmentRemoval::Removed;
+}
+
+Database::DoctorSave Database::saveDoctor(DoctorRecord &doctor, const std::optional<DoctorRecord> &original,
+                                         QString &error) const
+{
+    error.clear();
+    doctor.employeeNo = doctor.employeeNo.trimmed();
+    doctor.name = doctor.name.trimmed();
+    if (doctor.employeeNo.isEmpty() || doctor.employeeNo.size() > 32) {
+        error = QStringLiteral("工号需要 1 至 32 个字符。");
+        return DoctorSave::Error;
+    }
+    if (doctor.name.isEmpty() || doctor.name.size() > 64) {
+        error = QStringLiteral("医生姓名需要 1 至 64 个字符。");
+        return DoctorSave::Error;
+    }
+    if (!db_.isOpen()) {
+        error = QStringLiteral("数据库连接未打开。");
+        return DoctorSave::Error;
+    }
+    if (original && doctor.id != original->id) {
+        error = QStringLiteral("已有医生的编号不可修改。");
+        return DoctorSave::Error;
+    }
+    if (!doctor.departmentId.isEmpty()) {
+        QSqlQuery department(db_);
+        if (!department.prepare(QStringLiteral("SELECT 1 FROM Department WHERE ID = :id"))) {
+            error = department.lastError().text();
+            return DoctorSave::Error;
+        }
+        department.bindValue(QStringLiteral(":id"), doctor.departmentId);
+        if (!department.exec()) {
+            error = department.lastError().text();
+            return DoctorSave::Error;
+        }
+        if (!department.next()) {
+            error = QStringLiteral("所选科室不存在，请重新选择。");
+            return DoctorSave::MissingDepartment;
+        }
+    }
+
+    const QString id = original ? original->id : QUuid::createUuid().toString(QUuid::Id128);
+    QSqlQuery query(db_);
+    const QString statement = original
+        ? QStringLiteral("UPDATE Doctor SET EMPLOYEENO = :no, NAME = :name, DEPARTMENT_ID = :dep "
+                         "WHERE ID = :id AND EMPLOYEENO IS :oldno AND NAME IS :oldname "
+                         "AND DEPARTMENT_ID IS :olddep")
+        : QStringLiteral("INSERT INTO Doctor (ID, EMPLOYEENO, NAME, DEPARTMENT_ID) "
+                         "VALUES (:id, :no, :name, :dep)");
+    if (!query.prepare(statement)) {
+        error = QStringLiteral("无法保存医生。%1").arg(query.lastError().text());
+        return DoctorSave::Error;
+    }
+    const QVariant departmentId = doctor.departmentId.isEmpty()
+        ? QVariant(QMetaType::fromType<QString>())
+        : QVariant(doctor.departmentId);
+    query.bindValue(QStringLiteral(":id"), id);
+    query.bindValue(QStringLiteral(":no"), doctor.employeeNo);
+    query.bindValue(QStringLiteral(":name"), doctor.name);
+    query.bindValue(QStringLiteral(":dep"), departmentId);
+    if (original) {
+        query.bindValue(QStringLiteral(":oldno"), original->employeeNo);
+        query.bindValue(QStringLiteral(":oldname"), original->name);
+        query.bindValue(QStringLiteral(":olddep"), original->departmentId.isEmpty()
+            ? QVariant(QMetaType::fromType<QString>())
+            : QVariant(original->departmentId));
+    }
+    if (!query.exec()) {
+        const QSqlError sqlError = query.lastError();
+        if (sqlError.databaseText().contains(QStringLiteral("UNIQUE constraint failed: Doctor.EMPLOYEENO"))) {
+            error = QStringLiteral("工号已存在，请核对后重试。");
+            return DoctorSave::Duplicate;
+        }
+        error = QStringLiteral("无法保存医生。%1").arg(sqlError.text());
+        return DoctorSave::Error;
+    }
+    if (original && query.numRowsAffected() == 0) {
+        error = QStringLiteral("该医生记录已被更改或删除，请重新查询。");
+        return DoctorSave::Stale;
+    }
+    doctor.id = id;
+    return DoctorSave::Saved;
+}
+
+Database::DoctorRemoval Database::removeDoctor(const QString &id, QString &error) const
+{
+    error.clear();
+    if (!db_.isOpen()) {
+        error = QStringLiteral("数据库连接未打开。");
+        return DoctorRemoval::Error;
+    }
+
+    QSqlQuery query(db_);
+    if (!query.prepare(QStringLiteral("DELETE FROM Doctor WHERE ID = :id"))) {
+        error = query.lastError().text();
+        return DoctorRemoval::Error;
+    }
+    query.bindValue(QStringLiteral(":id"), id);
+    if (!query.exec()) {
+        error = query.lastError().text();
+        return DoctorRemoval::Error;
+    }
+    const int removed = query.numRowsAffected();
+    if (removed < 0) {
+        error = QStringLiteral("无法确认删除结果，请重新查询。");
+        return DoctorRemoval::Error;
+    }
+    return removed == 0 ? DoctorRemoval::Missing : DoctorRemoval::Removed;
+}
+
+bool Database::appendHistory(const QString &userId, const QString &event, QString &error) const
+{
+    error.clear();
+    const QString text = event.trimmed();
+    if (text.isEmpty()) {
+        error = QStringLiteral("操作记录内容为空。");
+        return false;
+    }
+    if (!db_.isOpen()) {
+        error = QStringLiteral("数据库连接未打开。");
+        return false;
+    }
+
+    QSqlQuery query(db_);
+    if (!query.prepare(QStringLiteral(
+            "INSERT INTO History (ID, USER_ID, EVENT, TIMESTAMP) VALUES (:id, :user, :event, :stamp)"))) {
+        error = query.lastError().text();
+        return false;
+    }
+    query.bindValue(QStringLiteral(":id"), QUuid::createUuid().toString(QUuid::Id128));
+    query.bindValue(QStringLiteral(":user"), userId.isEmpty()
+        ? QVariant(QMetaType::fromType<QString>())
+        : QVariant(userId));
+    query.bindValue(QStringLiteral(":event"), text.left(255));
+    query.bindValue(QStringLiteral(":stamp"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    if (!query.exec()) {
+        error = query.lastError().text();
+        return false;
+    }
+    return true;
 }
 
 QSqlDatabase Database::connection() const

@@ -9,9 +9,12 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QLibraryInfo>
+#include <QLocale>
 #include <QMessageBox>
 #include <QStandardPaths>
 #include <QStyleFactory>
+#include <QTranslator>
 
 namespace {
 int reportDatabaseError(const QString &title, const QString &error)
@@ -31,6 +34,13 @@ int main(int argc, char *argv[])
     app.setApplicationName(QStringLiteral("QT3Ui"));
     app.setApplicationDisplayName(QStringLiteral("诊疗工作台"));
     app.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+
+    // Qt 自带的对话框按钮（QInputDialog / QDialogButtonBox）默认是英文，加载中文翻译。
+    QTranslator translator;
+    if (translator.load(QLocale(QLocale::Chinese, QLocale::China), QStringLiteral("qtbase"),
+                        QStringLiteral("_"), QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {
+        app.installTranslator(&translator);
+    }
 
     QFont font = app.font();
 #ifdef Q_OS_WIN

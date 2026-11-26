@@ -3,6 +3,7 @@
 #include "database.h"
 #include "patientsexdelegate.h"
 #include "patienttablemodel.h"
+#include "selectmodel.h"
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
@@ -11,10 +12,14 @@
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDateEdit>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHeaderView>
 #include <QIcon>
+#include <QInputDialog>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
@@ -29,16 +34,19 @@
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QSortFilterProxyModel>
+#include <QSqlError>
+#include <QSqlQuery>
 #include <QStackedWidget>
 #include <QTableView>
 #include <QtConcurrentRun>
 #include <QVBoxLayout>
+#include <QVector>
 
 using Page = NavigationController::Page;
 using PatientColumn = PatientTableModel::Column;
 
 namespace {
-enum class Icon { Clinic, Home, Patients, Search, Add };
+enum class Icon { Clinic, Home, Patients, Search, Add, Staff, Log };
 
 QIcon interfaceIcon(Icon icon)
 {
@@ -85,6 +93,17 @@ QIcon interfaceIcon(Icon icon)
     case Icon::Search:
         painter.drawEllipse(QPointF(8.5, 8.5), 4.5, 4.5);
         painter.drawLine(QPointF(12, 12), QPointF(16, 16));
+        break;
+    case Icon::Staff:
+        painter.drawEllipse(QPointF(10, 6.5), 3, 3);
+        painter.drawArc(QRectF(4, 10, 12, 11), 0, 180 * 16);
+        break;
+    case Icon::Log:
+        for (int line = 0; line < 3; ++line) {
+            const qreal y = 5 + line * 5;
+            painter.drawEllipse(QPointF(4.5, y), 1, 1);
+            painter.drawLine(QPointF(8, y), QPointF(16, y));
+        }
         break;
     }
     painter.end();
@@ -156,6 +175,43 @@ bool readMeasure(const QLineEdit *field, std::optional<double> &measure)
     bool parsed = false;
     measure = text.toDouble(&parsed);
     return parsed;
+}
+
+// The three read-only pages share the same table dressing as the patient list.
+void dressTable(QTableView *table, const QString &objectName, const QString &accessibleName)
+{
+    table->setObjectName(objectName);
+    table->setAccessibleName(accessibleName);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setSelectionMode(QAbstractItemView::SingleSelection);
+    table->setAlternatingRowColors(true);
+    table->setShowGrid(false);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->verticalHeader()->hide();
+    table->verticalHeader()->setDefaultSectionSize(37);
+    auto *header = table->horizontalHeader();
+    header->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    header->setSectionResizeMode(QHeaderView::Stretch);
+    header->setMinimumSectionSize(64);
+}
+
+struct DepartmentOption
+{
+    QString id;
+    QString name;
+};
+
+QVector<DepartmentOption> departmentOptions(const Database &database)
+{
+    QVector<DepartmentOption> options;
+    options.append({QString(), QStringLiteral("未分配")});
+    QSqlQuery query(database.connection());
+    if (query.exec(QStringLiteral("SELECT ID, NAME FROM Department ORDER BY NAME"))) {
+        while (query.next()) {
+            options.append({query.value(0).toString(), query.value(1).toString()});
+        }
+    }
+    return options;
 }
 }
 
@@ -263,11 +319,20 @@ QWidget *PreviewWindow::createWorkspace()
 
     homeNav_ = button(QStringLiteral("工作台"), "nav");
     patientNav_ = button(QStringLiteral("患者管理"), "nav");
+    departmentNav_ = button(QStringLiteral("科室管理"), "nav");
+    doctorNav_ = button(QStringLiteral("医生管理"), "nav");
+    historyNav_ = button(QStringLiteral("操作记录"), "nav");
     homeNav_->setObjectName(QStringLiteral("homeNav"));
     patientNav_->setObjectName(QStringLiteral("patientNav"));
+    departmentNav_->setObjectName(QStringLiteral("departmentNav"));
+    doctorNav_->setObjectName(QStringLiteral("doctorNav"));
+    historyNav_->setObjectName(QStringLiteral("historyNav"));
     homeNav_->setIcon(interfaceIcon(Icon::Home));
     patientNav_->setIcon(interfaceIcon(Icon::Patients));
-    for (auto *action : {homeNav_, patientNav_}) {
+    departmentNav_->setIcon(interfaceIcon(Icon::Patients));
+    doctorNav_->setIcon(interfaceIcon(Icon::Staff));
+    historyNav_->setIcon(interfaceIcon(Icon::Log));
+    for (auto *action : {homeNav_, patientNav_, departmentNav_, doctorNav_, historyNav_}) {
         action->setCheckable(true);
         action->setAutoExclusive(true);
         action->setIconSize(QSize(16, 16));
@@ -282,9 +347,15 @@ QWidget *PreviewWindow::createWorkspace()
     homePage_ = createHomePage();
     patientPage_ = createPatientPage();
     editorPage_ = createEditorPage();
+    departmentPage_ = createDepartmentPage();
+    doctorPage_ = createDoctorPage();
+    historyPage_ = createHistoryPage();
     pages_->addWidget(homePage_);
     pages_->addWidget(patientPage_);
     pages_->addWidget(editorPage_);
+    pages_->addWidget(departmentPage_);
+    pages_->addWidget(doctorPage_);
+    pages_->addWidget(historyPage_);
     layout->addWidget(appBar);
     layout->addWidget(pages_, 1);
 
@@ -301,8 +372,21 @@ QWidget *PreviewWindow::createWorkspace()
             navigation_.selectWorkspacePage(Page::Patients);
         }
     });
+    const auto openModule = [this](Page page, QPushButton *nav) {
+        return [this, page, nav] {
+            if (!confirmLeaveEditor()) {
+                return;
+            }
+            nav->setChecked(true);
+            navigation_.selectWorkspacePage(page);
+        };
+    };
+    connect(departmentNav_, &QPushButton::clicked, this, openModule(Page::Departments, departmentNav_));
+    connect(doctorNav_, &QPushButton::clicked, this, openModule(Page::Doctors, doctorNav_));
+    connect(historyNav_, &QPushButton::clicked, this, openModule(Page::History, historyNav_));
     connect(exit, &QPushButton::clicked, this, [this] {
         if (confirmLeaveEditor()) {
+            logEvent(QStringLiteral("退出登录"));
             navigation_.returnToLogin();
         }
     });
@@ -334,14 +418,29 @@ QWidget *PreviewWindow::createHomePage()
     open->setObjectName(QStringLiteral("openPatients"));
     patient->addWidget(open);
     list->addLayout(patient);
-    for (const QString &name : {QStringLiteral("医生管理"), QStringLiteral("科室管理")}) {
+    const struct {
+        QString title;
+        QString action;
+        const char *objectName;
+        Page page;
+    } modulesList[] = {
+        {QStringLiteral("医生管理"), QStringLiteral("打开医生管理"), "openDoctors", Page::Doctors},
+        {QStringLiteral("科室管理"), QStringLiteral("打开科室管理"), "openDepartments", Page::Departments},
+        {QStringLiteral("操作记录"), QStringLiteral("查看操作记录"), "openHistory", Page::History},
+    };
+    for (const auto &module : modulesList) {
         list->addWidget(divider());
         auto *row = new QHBoxLayout;
-        row->setContentsMargins(0, 14, 0, 14);
-        row->addWidget(label(name, "fieldLabel"));
+        row->setContentsMargins(0, 12, 0, 12);
+        row->addWidget(label(module.title, "sectionTitle"));
         row->addStretch();
-        row->addWidget(label(QStringLiteral("预留"), "muted"));
+        auto *openModulePage = button(module.action);
+        openModulePage->setObjectName(QString::fromLatin1(module.objectName));
+        row->addWidget(openModulePage);
         list->addLayout(row);
+        connect(openModulePage, &QPushButton::clicked, &navigation_, [this, page = module.page] {
+            navigation_.selectWorkspacePage(page);
+        });
     }
     layout->addWidget(modules);
     layout->addStretch();
@@ -509,6 +608,9 @@ QWidget *PreviewWindow::createPatientPage()
     // Reload after the delegate has closed its editor.
     connect(&patientData_, &PatientTableModel::patientSaved,
             this, &PreviewWindow::refreshSavedPatient, Qt::QueuedConnection);
+    connect(&patientData_, &PatientTableModel::patientSaved, this, [this](const QString &id) {
+        logEvent(QStringLiteral("修改患者 %1 的性别").arg(id));
+    }, Qt::QueuedConnection);
     connect(&patientData_, &PatientTableModel::patientSaveFailed, this, [this](const QString &error) {
         QMessageBox dialog(QMessageBox::Warning, QStringLiteral("无法保存患者档案"), {}, QMessageBox::Close, this);
         dialog.setTextFormat(Qt::PlainText);
@@ -633,6 +735,502 @@ QWidget *PreviewWindow::createEditorPage()
     return page;
 }
 
+QWidget *PreviewWindow::createDepartmentPage()
+{
+    auto *page = new QWidget;
+    page->setObjectName(QStringLiteral("departmentPage"));
+    auto *layout = pageLayout(page);
+
+    auto *top = new QHBoxLayout;
+    top->addWidget(label(QStringLiteral("科室管理"), "pageTitle"), 1);
+    auto *add = button(QStringLiteral("新增科室"), "primary");
+    add->setObjectName(QStringLiteral("addDepartment"));
+    add->setIcon(interfaceIcon(Icon::Add));
+    add->setIconSize(QSize(15, 15));
+    top->addWidget(add, 0, Qt::AlignVCenter);
+    layout->addLayout(top);
+
+    auto *panel = new QFrame;
+    panel->setObjectName(QStringLiteral("panel"));
+    auto *body = new QVBoxLayout(panel);
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(0);
+
+    auto *toolbar = new QHBoxLayout;
+    toolbar->setContentsMargins(12, 10, 12, 10);
+    toolbar->setSpacing(6);
+    departmentNotice_ = label({}, "muted");
+    departmentNotice_->setObjectName(QStringLiteral("departmentNotice"));
+    departmentNotice_->setTextFormat(Qt::PlainText);
+    renameDepartmentAction_ = button(QStringLiteral("重命名"));
+    renameDepartmentAction_->setObjectName(QStringLiteral("renameDepartment"));
+    deleteDepartmentAction_ = button(QStringLiteral("删除"), "danger");
+    deleteDepartmentAction_->setObjectName(QStringLiteral("deleteDepartment"));
+    toolbar->addWidget(departmentNotice_, 1);
+    toolbar->addWidget(renameDepartmentAction_);
+    toolbar->addWidget(deleteDepartmentAction_);
+    body->addLayout(toolbar);
+
+    departmentData_ = new SelectModel(database_, page);
+    departmentTable_ = new QTableView;
+    dressTable(departmentTable_, QStringLiteral("departmentTable"), QStringLiteral("科室列表"));
+    departmentTable_->setModel(departmentData_);
+    departmentTable_->setToolTip(QStringLiteral("选中一行后可重命名或删除；仍有医生时不允许删除。"));
+    body->addWidget(departmentTable_, 1);
+
+    auto *foot = new QFrame;
+    foot->setObjectName(QStringLiteral("tableFooter"));
+    auto *footer = new QHBoxLayout(foot);
+    footer->setContentsMargins(12, 7, 12, 7);
+    departmentCount_ = label({}, "muted");
+    departmentCount_->setObjectName(QStringLiteral("departmentCount"));
+    footer->addWidget(departmentCount_);
+    footer->addStretch();
+    footer->addWidget(label(QStringLiteral("SQLite 已连接"), "muted"));
+    body->addWidget(foot);
+    layout->addWidget(panel, 1);
+
+    auto updateActions = [this] {
+        const bool selected = departmentTable_->selectionModel()->hasSelection();
+        renameDepartmentAction_->setEnabled(selected);
+        deleteDepartmentAction_->setEnabled(selected);
+    };
+    connect(departmentTable_->selectionModel(), &QItemSelectionModel::selectionChanged,
+            this, updateActions);
+    connect(departmentTable_, &QTableView::doubleClicked, this, &PreviewWindow::renameDepartment);
+    connect(add, &QPushButton::clicked, this, &PreviewWindow::addDepartment);
+    connect(renameDepartmentAction_, &QPushButton::clicked, this, &PreviewWindow::renameDepartment);
+    connect(deleteDepartmentAction_, &QPushButton::clicked, this, &PreviewWindow::deleteDepartment);
+    updateActions();
+    return page;
+}
+
+QWidget *PreviewWindow::createDoctorPage()
+{
+    auto *page = new QWidget;
+    page->setObjectName(QStringLiteral("doctorPage"));
+    auto *layout = pageLayout(page);
+
+    auto *top = new QHBoxLayout;
+    top->addWidget(label(QStringLiteral("医生管理"), "pageTitle"), 1);
+    auto *add = button(QStringLiteral("新增医生"), "primary");
+    add->setObjectName(QStringLiteral("addDoctor"));
+    add->setIcon(interfaceIcon(Icon::Add));
+    add->setIconSize(QSize(15, 15));
+    top->addWidget(add, 0, Qt::AlignVCenter);
+    layout->addLayout(top);
+
+    auto *panel = new QFrame;
+    panel->setObjectName(QStringLiteral("panel"));
+    auto *body = new QVBoxLayout(panel);
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(0);
+
+    auto *toolbar = new QHBoxLayout;
+    toolbar->setContentsMargins(12, 10, 12, 10);
+    toolbar->setSpacing(6);
+    doctorNotice_ = label({}, "muted");
+    doctorNotice_->setObjectName(QStringLiteral("doctorNotice"));
+    doctorNotice_->setTextFormat(Qt::PlainText);
+    editDoctorAction_ = button(QStringLiteral("修改"));
+    editDoctorAction_->setObjectName(QStringLiteral("editDoctor"));
+    deleteDoctorAction_ = button(QStringLiteral("删除"), "danger");
+    deleteDoctorAction_->setObjectName(QStringLiteral("deleteDoctor"));
+    toolbar->addWidget(doctorNotice_, 1);
+    toolbar->addWidget(editDoctorAction_);
+    toolbar->addWidget(deleteDoctorAction_);
+    body->addLayout(toolbar);
+
+    doctorData_ = new SelectModel(database_, page);
+    doctorTable_ = new QTableView;
+    dressTable(doctorTable_, QStringLiteral("doctorTable"), QStringLiteral("医生列表"));
+    doctorTable_->setModel(doctorData_);
+    doctorTable_->setToolTip(QStringLiteral("工号唯一；科室可以留空表示尚未分配。"));
+    body->addWidget(doctorTable_, 1);
+
+    auto *foot = new QFrame;
+    foot->setObjectName(QStringLiteral("tableFooter"));
+    auto *footer = new QHBoxLayout(foot);
+    footer->setContentsMargins(12, 7, 12, 7);
+    doctorCount_ = label({}, "muted");
+    doctorCount_->setObjectName(QStringLiteral("doctorCount"));
+    footer->addWidget(doctorCount_);
+    footer->addStretch();
+    footer->addWidget(label(QStringLiteral("SQLite 已连接"), "muted"));
+    body->addWidget(foot);
+    layout->addWidget(panel, 1);
+
+    auto updateActions = [this] {
+        const bool selected = doctorTable_->selectionModel()->hasSelection();
+        editDoctorAction_->setEnabled(selected);
+        deleteDoctorAction_->setEnabled(selected);
+    };
+    connect(doctorTable_->selectionModel(), &QItemSelectionModel::selectionChanged, this, updateActions);
+    connect(doctorTable_, &QTableView::doubleClicked, this, &PreviewWindow::editDoctor);
+    connect(add, &QPushButton::clicked, this, &PreviewWindow::addDoctor);
+    connect(editDoctorAction_, &QPushButton::clicked, this, &PreviewWindow::editDoctor);
+    connect(deleteDoctorAction_, &QPushButton::clicked, this, &PreviewWindow::deleteDoctor);
+    updateActions();
+    return page;
+}
+
+QWidget *PreviewWindow::createHistoryPage()
+{
+    auto *page = new QWidget;
+    page->setObjectName(QStringLiteral("historyPage"));
+    auto *layout = pageLayout(page);
+
+    auto *top = new QHBoxLayout;
+    top->addWidget(label(QStringLiteral("操作记录"), "pageTitle"), 1);
+    auto *refresh = button(QStringLiteral("刷新"));
+    refresh->setObjectName(QStringLiteral("refreshHistory"));
+    top->addWidget(refresh, 0, Qt::AlignVCenter);
+    layout->addLayout(top);
+
+    auto *panel = new QFrame;
+    panel->setObjectName(QStringLiteral("panel"));
+    auto *body = new QVBoxLayout(panel);
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(0);
+
+    auto *toolbar = new QHBoxLayout;
+    toolbar->setContentsMargins(12, 10, 12, 10);
+    toolbar->setSpacing(6);
+    toolbar->addWidget(label(QStringLiteral("登录、退出与患者、科室、医生的增删改都会记录在这里。"), "muted"), 1);
+    body->addLayout(toolbar);
+
+    historyData_ = new SelectModel(database_, page);
+    historyTable_ = new QTableView;
+    dressTable(historyTable_, QStringLiteral("historyTable"), QStringLiteral("操作记录列表"));
+    historyTable_->setModel(historyData_);
+    body->addWidget(historyTable_, 1);
+
+    auto *foot = new QFrame;
+    foot->setObjectName(QStringLiteral("tableFooter"));
+    auto *footer = new QHBoxLayout(foot);
+    footer->setContentsMargins(12, 7, 12, 7);
+    historyCount_ = label({}, "muted");
+    historyCount_->setObjectName(QStringLiteral("historyCount"));
+    footer->addWidget(historyCount_);
+    historyNotice_ = label({}, "muted");
+    historyNotice_->setObjectName(QStringLiteral("historyNotice"));
+    footer->addWidget(historyNotice_, 1, Qt::AlignCenter);
+    footer->addWidget(label(QStringLiteral("SQLite 已连接"), "muted"));
+    body->addWidget(foot);
+    layout->addWidget(panel, 1);
+
+    connect(refresh, &QPushButton::clicked, this, &PreviewWindow::reloadHistory);
+    return page;
+}
+
+void PreviewWindow::logEvent(const QString &event)
+{
+    QString error;
+    if (!database_.appendHistory(currentUserId_, event, error) && historyNotice_) {
+        historyNotice_->setText(QStringLiteral("操作记录未能保存：%1").arg(error));
+    }
+}
+
+void PreviewWindow::reloadDepartments()
+{
+    QString error;
+    const bool loaded = departmentData_->load(QStringLiteral(
+        "SELECT d.NAME AS 名称, d.ID AS 科室编号, "
+        "(SELECT COUNT(*) FROM Doctor w WHERE w.DEPARTMENT_ID = d.ID) AS 医生数 "
+        "FROM Department d ORDER BY d.NAME"), error);
+    if (!loaded) {
+        departmentCount_->setText(QStringLiteral("记录数不可用"));
+        departmentNotice_->setText(QStringLiteral("无法加载科室列表：%1").arg(error));
+        return;
+    }
+    departmentTable_->hideColumn(1);
+    departmentTable_->clearSelection();
+    departmentTable_->setCurrentIndex(QModelIndex());
+    const int count = departmentData_->rowCount();
+    departmentCount_->setText(QStringLiteral("%1 个科室").arg(count));
+    renameDepartmentAction_->setEnabled(false);
+    deleteDepartmentAction_->setEnabled(false);
+}
+
+void PreviewWindow::reloadDoctors()
+{
+    QString error;
+    const bool loaded = doctorData_->load(QStringLiteral(
+        "SELECT w.EMPLOYEENO AS 工号, w.NAME AS 姓名, COALESCE(d.NAME, '未分配') AS 所属科室, "
+        "w.DEPARTMENT_ID AS 科室编号, w.ID AS 记录编号 "
+        "FROM Doctor w LEFT JOIN Department d ON d.ID = w.DEPARTMENT_ID "
+        "ORDER BY w.EMPLOYEENO"), error);
+    if (!loaded) {
+        doctorCount_->setText(QStringLiteral("记录数不可用"));
+        doctorNotice_->setText(QStringLiteral("无法加载医生列表：%1").arg(error));
+        return;
+    }
+    doctorTable_->hideColumn(3);
+    doctorTable_->hideColumn(4);
+    doctorTable_->clearSelection();
+    doctorTable_->setCurrentIndex(QModelIndex());
+    doctorCount_->setText(QStringLiteral("%1 位医生").arg(doctorData_->rowCount()));
+    editDoctorAction_->setEnabled(false);
+    deleteDoctorAction_->setEnabled(false);
+}
+
+void PreviewWindow::reloadHistory()
+{
+    QString error;
+    const bool loaded = historyData_->load(QStringLiteral(
+        "SELECT strftime('%Y-%m-%d %H:%M:%S', h.TIMESTAMP, 'localtime') AS 时间, "
+        "COALESCE(u.USERNAME, '系统') AS 账号, h.EVENT AS 操作内容 "
+        "FROM History h LEFT JOIN \"User\" u ON u.ID = h.USER_ID "
+        "ORDER BY h.TIMESTAMP DESC"), error);
+    if (!loaded) {
+        historyCount_->setText(QStringLiteral("记录数不可用"));
+        historyNotice_->setText(QStringLiteral("无法加载操作记录：%1").arg(error));
+        return;
+    }
+    historyTable_->clearSelection();
+    historyTable_->setCurrentIndex(QModelIndex());
+    historyNotice_->clear();
+    historyCount_->setText(QStringLiteral("%1 条操作记录").arg(historyData_->rowCount()));
+}
+
+void PreviewWindow::addDepartment()
+{
+    bool accepted = false;
+    const QString name = QInputDialog::getText(this, QStringLiteral("新增科室"),
+                                               QStringLiteral("科室名称（1 至 64 个字符）："),
+                                               QLineEdit::Normal, {}, &accepted).trimmed();
+    if (!accepted) {
+        return;
+    }
+
+    DepartmentRecord record;
+    record.name = name;
+    QString error;
+    const auto result = database_.saveDepartment(record, std::nullopt, error);
+    reloadDepartments();
+    if (result == Database::DepartmentSave::Saved) {
+        departmentNotice_->setText(QStringLiteral("已新增科室 %1。").arg(record.name));
+        logEvent(QStringLiteral("新增科室 %1").arg(record.name));
+    } else {
+        departmentNotice_->setText(error);
+    }
+}
+
+void PreviewWindow::renameDepartment()
+{
+    const QModelIndex cell = departmentTable_->selectionModel()->selectedRows().value(0);
+    if (!cell.isValid()) {
+        return;
+    }
+    const QString id = departmentData_->index(cell.row(), 1).data(Qt::EditRole).toString();
+    const QString previousName = departmentData_->index(cell.row(), 0).data(Qt::EditRole).toString();
+
+    bool accepted = false;
+    const QString name = QInputDialog::getText(this, QStringLiteral("重命名科室"),
+                                               QStringLiteral("科室名称（1 至 64 个字符）："),
+                                               QLineEdit::Normal, previousName, &accepted).trimmed();
+    if (!accepted) {
+        return;
+    }
+
+    DepartmentRecord record;
+    record.id = id;
+    record.name = name;
+    DepartmentRecord original;
+    original.id = id;
+    original.name = previousName;
+    QString error;
+    const auto result = database_.saveDepartment(record, original, error);
+    reloadDepartments();
+    if (result == Database::DepartmentSave::Saved) {
+        departmentNotice_->setText(QStringLiteral("已把“%1”改名为“%2”。").arg(previousName, record.name));
+        logEvent(QStringLiteral("科室改名：%1 → %2").arg(previousName, record.name));
+    } else {
+        departmentNotice_->setText(error);
+    }
+}
+
+void PreviewWindow::deleteDepartment()
+{
+    const QModelIndex cell = departmentTable_->selectionModel()->selectedRows().value(0);
+    if (!cell.isValid()) {
+        return;
+    }
+    const QString id = departmentData_->index(cell.row(), 1).data(Qt::EditRole).toString();
+    const QString name = departmentData_->index(cell.row(), 0).data(Qt::EditRole).toString();
+
+    QMessageBox confirmation(QMessageBox::Warning, QStringLiteral("删除科室"), {},
+                             QMessageBox::Yes | QMessageBox::Cancel, this);
+    confirmation.setTextFormat(Qt::PlainText);
+    confirmation.setText(QStringLiteral("删除科室“%1”？").arg(name));
+    confirmation.button(QMessageBox::Yes)->setText(QStringLiteral("删除"));
+    confirmation.button(QMessageBox::Yes)->setProperty("role", QStringLiteral("danger"));
+    confirmation.button(QMessageBox::Cancel)->setText(QStringLiteral("取消"));
+    confirmation.setDefaultButton(QMessageBox::Cancel);
+    confirmation.setEscapeButton(QMessageBox::Cancel);
+    if (confirmation.exec() != QMessageBox::Yes) {
+        return;
+    }
+
+    QString error;
+    const auto result = database_.removeDepartment(id, error);
+    reloadDepartments();
+    reloadDoctors();
+    switch (result) {
+    case Database::DepartmentRemoval::Removed:
+        departmentNotice_->setText(QStringLiteral("已删除科室“%1”。").arg(name));
+        logEvent(QStringLiteral("删除科室 %1").arg(name));
+        break;
+    case Database::DepartmentRemoval::Missing:
+        departmentNotice_->setText(QStringLiteral("该科室已不存在。"));
+        break;
+    case Database::DepartmentRemoval::InUse:
+    case Database::DepartmentRemoval::Error:
+        departmentNotice_->setText(error);
+        break;
+    }
+}
+
+void PreviewWindow::addDoctor()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("新增医生"));
+    auto *form = new QFormLayout(&dialog);
+    auto *number = new QLineEdit(&dialog);
+    number->setObjectName(QStringLiteral("doctorEmployeeNo"));
+    number->setMaxLength(32);
+    auto *name = new QLineEdit(&dialog);
+    name->setObjectName(QStringLiteral("doctorName"));
+    name->setMaxLength(64);
+    auto *department = new QComboBox(&dialog);
+    department->setObjectName(QStringLiteral("doctorDepartment"));
+    for (const auto &option : departmentOptions(database_)) {
+        department->addItem(option.name, option.id);
+    }
+    form->addRow(QStringLiteral("工号 *"), number);
+    form->addRow(QStringLiteral("姓名 *"), name);
+    form->addRow(QStringLiteral("所属科室"), department);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("保存"));
+    buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    DoctorRecord record;
+    record.employeeNo = number->text();
+    record.name = name->text();
+    record.departmentId = department->currentData().toString();
+    QString error;
+    const auto result = database_.saveDoctor(record, std::nullopt, error);
+    reloadDoctors();
+    reloadDepartments();
+    if (result == Database::DoctorSave::Saved) {
+        doctorNotice_->setText(QStringLiteral("已新增医生 %1（工号 %2）。").arg(record.name, record.employeeNo));
+        logEvent(QStringLiteral("新增医生 %1（工号 %2）").arg(record.name, record.employeeNo));
+    } else {
+        doctorNotice_->setText(error);
+    }
+}
+
+void PreviewWindow::editDoctor()
+{
+    const QModelIndex cell = doctorTable_->selectionModel()->selectedRows().value(0);
+    if (!cell.isValid()) {
+        return;
+    }
+    DoctorRecord original;
+    original.employeeNo = doctorData_->index(cell.row(), 0).data(Qt::EditRole).toString();
+    original.name = doctorData_->index(cell.row(), 1).data(Qt::EditRole).toString();
+    original.departmentId = doctorData_->index(cell.row(), 3).data(Qt::EditRole).toString();
+    original.id = doctorData_->index(cell.row(), 4).data(Qt::EditRole).toString();
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("修改医生"));
+    auto *form = new QFormLayout(&dialog);
+    auto *number = new QLineEdit(original.employeeNo, &dialog);
+    number->setObjectName(QStringLiteral("doctorEmployeeNo"));
+    number->setMaxLength(32);
+    auto *name = new QLineEdit(original.name, &dialog);
+    name->setObjectName(QStringLiteral("doctorName"));
+    name->setMaxLength(64);
+    auto *department = new QComboBox(&dialog);
+    department->setObjectName(QStringLiteral("doctorDepartment"));
+    for (const auto &option : departmentOptions(database_)) {
+        department->addItem(option.name, option.id);
+    }
+    const int index = department->findData(original.departmentId);
+    department->setCurrentIndex(index >= 0 ? index : 0);
+    form->addRow(QStringLiteral("工号 *"), number);
+    form->addRow(QStringLiteral("姓名 *"), name);
+    form->addRow(QStringLiteral("所属科室"), department);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("保存"));
+    buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    DoctorRecord updated;
+    updated.id = original.id;
+    updated.employeeNo = number->text();
+    updated.name = name->text();
+    updated.departmentId = department->currentData().toString();
+    QString error;
+    const auto result = database_.saveDoctor(updated, original, error);
+    reloadDoctors();
+    reloadDepartments();
+    if (result == Database::DoctorSave::Saved) {
+        doctorNotice_->setText(QStringLiteral("已保存医生 %1（工号 %2）。").arg(updated.name, updated.employeeNo));
+        logEvent(QStringLiteral("修改医生 %1（工号 %2）").arg(updated.name, updated.employeeNo));
+    } else {
+        doctorNotice_->setText(error);
+    }
+}
+
+void PreviewWindow::deleteDoctor()
+{
+    const QModelIndex cell = doctorTable_->selectionModel()->selectedRows().value(0);
+    if (!cell.isValid()) {
+        return;
+    }
+    const QString id = doctorData_->index(cell.row(), 4).data(Qt::EditRole).toString();
+    const QString name = doctorData_->index(cell.row(), 1).data(Qt::EditRole).toString();
+    const QString number = doctorData_->index(cell.row(), 0).data(Qt::EditRole).toString();
+
+    QMessageBox confirmation(QMessageBox::Warning, QStringLiteral("删除医生"), {},
+                             QMessageBox::Yes | QMessageBox::Cancel, this);
+    confirmation.setTextFormat(Qt::PlainText);
+    confirmation.setText(QStringLiteral("删除医生“%1”（工号 %2）？").arg(name, number));
+    confirmation.button(QMessageBox::Yes)->setText(QStringLiteral("删除"));
+    confirmation.button(QMessageBox::Yes)->setProperty("role", QStringLiteral("danger"));
+    confirmation.button(QMessageBox::Cancel)->setText(QStringLiteral("取消"));
+    confirmation.setDefaultButton(QMessageBox::Cancel);
+    confirmation.setEscapeButton(QMessageBox::Cancel);
+    if (confirmation.exec() != QMessageBox::Yes) {
+        return;
+    }
+
+    QString error;
+    const auto result = database_.removeDoctor(id, error);
+    reloadDoctors();
+    reloadDepartments();
+    if (result == Database::DoctorRemoval::Removed) {
+        doctorNotice_->setText(QStringLiteral("已删除医生“%1”。").arg(name));
+        logEvent(QStringLiteral("删除医生 %1（工号 %2）").arg(name, number));
+    } else if (result == Database::DoctorRemoval::Missing) {
+        doctorNotice_->setText(QStringLiteral("该医生记录已不存在。"));
+    } else {
+        doctorNotice_->setText(error);
+    }
+}
+
 void PreviewWindow::attemptLogin()
 {
     if (navigation_.currentPage() != Page::Login || !signIn_->isEnabled()) {
@@ -652,12 +1250,15 @@ void PreviewWindow::attemptLogin()
     }
 
     QByteArray digest;
-    const auto credential = database_.passwordDigestForUser(username, digest);
+    QString userId;
+    const auto credential = database_.passwordDigestForUser(username, digest, &userId);
     if (credential != Database::CredentialLookup::Found) {
         finishLogin(credential == Database::CredentialLookup::UnknownUser
             ? PasswordDigest::Check::Mismatch : PasswordDigest::Check::Unavailable);
         return;
     }
+    pendingUserId_ = userId;
+    currentUserName_ = username;
 
     const QByteArray password = password_->text().toUtf8();
     password_->clear();
@@ -680,9 +1281,13 @@ void PreviewWindow::finishLogin(PasswordDigest::Check result)
 
     if (result == PasswordDigest::Check::Match) {
         loginFeedback_->clear();
+        currentUserId_ = pendingUserId_;
+        pendingUserId_.clear();
+        logEvent(QStringLiteral("登录系统"));
         navigation_.enterWorkspace();
         return;
     }
+    pendingUserId_.clear();
 
     loginFeedback_->setText(result == PasswordDigest::Check::Mismatch
         ? QStringLiteral("用户名或密码错误。")
@@ -719,6 +1324,32 @@ void PreviewWindow::applyPage(Page previous, Page current)
         patientNav_->setChecked(true);
         focus = patientName_;
         break;
+    case Page::Departments:
+        if (previous != Page::Departments) {
+            departmentNotice_->clear();
+            reloadDepartments();
+        }
+        pages_->setCurrentWidget(departmentPage_);
+        departmentNav_->setChecked(true);
+        focus = departmentTable_;
+        break;
+    case Page::Doctors:
+        if (previous != Page::Doctors) {
+            doctorNotice_->clear();
+            reloadDoctors();
+        }
+        pages_->setCurrentWidget(doctorPage_);
+        doctorNav_->setChecked(true);
+        focus = doctorTable_;
+        break;
+    case Page::History:
+        if (previous != Page::History) {
+            reloadHistory();
+        }
+        pages_->setCurrentWidget(historyPage_);
+        historyNav_->setChecked(true);
+        focus = historyTable_;
+        break;
     }
 
     root_->setCurrentWidget(workspace_);
@@ -727,6 +1358,8 @@ void PreviewWindow::applyPage(Page previous, Page current)
 
 void PreviewWindow::clearWorkspace()
 {
+    currentUserId_.clear();
+    currentUserName_.clear();
     username_->clear();
     password_->clear();
     loginFeedback_->clear();
@@ -852,6 +1485,9 @@ void PreviewWindow::deleteSelectedPatient()
     patientNotice_->setText(result == Database::PatientRemoval::Removed
         ? QStringLiteral("已删除患者 %1。").arg(id)
         : QStringLiteral("该患者记录已不存在。"));
+    if (result == Database::PatientRemoval::Removed) {
+        logEvent(QStringLiteral("删除患者 %1").arg(id));
+    }
     search_->setFocus();
 }
 
@@ -960,6 +1596,9 @@ void PreviewWindow::saveEditor()
         editorNotice_->setText(error);
         return;
     }
+    logEvent(originalPatient_
+        ? QStringLiteral("修改患者 %1").arg(updated.id)
+        : QStringLiteral("新增患者 %1").arg(updated.id));
     refreshSavedPatient(updated.id);
     navigation_.goBack();
 }

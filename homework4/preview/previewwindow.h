@@ -3,6 +3,7 @@
 #include "navigationcontroller.h"
 #include "passworddigest.h"
 #include "patientrecord.h"
+#include "staffrecord.h"
 
 #include <QFutureWatcher>
 #include <QStringList>
@@ -10,6 +11,7 @@
 
 class Database;
 class PatientTableModel;
+class SelectModel;
 class QCloseEvent;
 class QComboBox;
 class QDateEdit;
@@ -35,6 +37,9 @@ private:
     QWidget *createHomePage();
     QWidget *createPatientPage();
     QWidget *createEditorPage();
+    QWidget *createDepartmentPage();
+    QWidget *createDoctorPage();
+    QWidget *createHistoryPage();
     void attemptLogin();
     void finishLogin(PasswordDigest::Check result);
     void applyPage(NavigationController::Page previous, NavigationController::Page current);
@@ -53,6 +58,16 @@ private:
     void goBack();
     void saveEditor();
     void refreshSavedPatient(const QString &id);
+    void logEvent(const QString &event);
+    void reloadDepartments();
+    void reloadDoctors();
+    void reloadHistory();
+    void addDepartment();
+    void renameDepartment();
+    void deleteDepartment();
+    void addDoctor();
+    void editDoctor();
+    void deleteDoctor();
 
     const Database &database_;
     PatientTableModel &patientData_;
@@ -98,4 +113,30 @@ private:
     QLineEdit *weight_ = nullptr;
     std::optional<PatientRecord> originalPatient_;
     QStringList initialEditorInput_;
+
+    QPushButton *departmentNav_ = nullptr;
+    QPushButton *doctorNav_ = nullptr;
+    QPushButton *historyNav_ = nullptr;
+    QWidget *departmentPage_ = nullptr;
+    QWidget *doctorPage_ = nullptr;
+    QWidget *historyPage_ = nullptr;
+    SelectModel *departmentData_ = nullptr;
+    SelectModel *doctorData_ = nullptr;
+    SelectModel *historyData_ = nullptr;
+    QTableView *departmentTable_ = nullptr;
+    QTableView *doctorTable_ = nullptr;
+    QTableView *historyTable_ = nullptr;
+    QLabel *departmentCount_ = nullptr;
+    QLabel *doctorCount_ = nullptr;
+    QLabel *historyCount_ = nullptr;
+    QLabel *departmentNotice_ = nullptr;
+    QLabel *doctorNotice_ = nullptr;
+    QLabel *historyNotice_ = nullptr;
+    QPushButton *renameDepartmentAction_ = nullptr;
+    QPushButton *deleteDepartmentAction_ = nullptr;
+    QPushButton *editDoctorAction_ = nullptr;
+    QPushButton *deleteDoctorAction_ = nullptr;
+    QString currentUserId_;
+    QString currentUserName_;
+    QString pendingUserId_;
 };

@@ -6,7 +6,7 @@ QWidget#loginPage, QWidget#workspace {
     background: #f3f5f6;
 }
 
-QMessageBox {
+QMessageBox, QDialog {
     background: #ffffff;
 }
 

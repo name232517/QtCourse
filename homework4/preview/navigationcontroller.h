@@ -7,7 +7,7 @@ class NavigationController final : public QObject
     Q_OBJECT
 
 public:
-    enum class Page { Login, Workbench, Patients, Editor };
+    enum class Page { Login, Workbench, Patients, Editor, Departments, Doctors, History };
     Q_ENUM(Page)
 
     Page currentPage() const;

@@ -21,6 +21,9 @@ void NavigationController::selectWorkspacePage(Page page)
     switch (page) {
     case Page::Workbench:
     case Page::Patients:
+    case Page::Departments:
+    case Page::Doctors:
+    case Page::History:
         setPage(page);
         break;
     case Page::Editor:
@@ -37,7 +40,8 @@ void NavigationController::goBack()
 {
     if (currentPage_ == Page::Editor) {
         setPage(Page::Patients);
-    } else if (currentPage_ == Page::Patients) {
+    } else if (currentPage_ == Page::Patients || currentPage_ == Page::Departments
+               || currentPage_ == Page::Doctors || currentPage_ == Page::History) {
         setPage(Page::Workbench);
     }
 }

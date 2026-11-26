@@ -13,6 +13,7 @@ qt_add_library(QT3Database STATIC
     patientrecord.h
     passworddigest.cpp
     passworddigest.h
+    staffrecord.h
 )
 
 qt_add_resources(QT3Database database_schema
@@ -38,6 +39,8 @@ qt_add_executable(QT3Ui WIN32 MACOSX_BUNDLE
     preview/patienttablemodel.h
     preview/previewwindow.cpp
     preview/previewwindow.h
+    preview/selectmodel.cpp
+    preview/selectmodel.h
 )
 set_target_properties(QT3Ui PROPERTIES AUTOMOC ON)
 
